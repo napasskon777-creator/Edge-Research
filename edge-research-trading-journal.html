@@ -1,0 +1,2583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Edge Research System — Trading Journal</title>
+<style>
+:root{
+  --bg:#0A0D12;
+  --bg-1:#0F1319;
+  --bg-2:#141A22;
+  --bg-3:#1B222C;
+  --border:#252D38;
+  --border-soft:#1C232D;
+  --text:#E7EAEE;
+  --text-dim:#93A0AF;
+  --text-faint:#5C6774;
+  --accent:#5B8CFF;
+  --accent-dim:#2A3B5C;
+  --green:#33D6A0;
+  --green-dim:#12332B;
+  --red:#FF6B6B;
+  --red-dim:#3A1F22;
+  --amber:#E8A94D;
+  --amber-dim:#3A2E17;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: 6px;
+  --sidebar-w: 220px;
+}
+[data-theme="light"]{
+  --bg:#F5F6F8;
+  --bg-1:#FFFFFF;
+  --bg-2:#FFFFFF;
+  --bg-3:#EEF0F3;
+  --border:#DCE0E6;
+  --border-soft:#E7E9ED;
+  --text:#141A22;
+  --text-dim:#5C6774;
+  --text-faint:#93A0AF;
+  --accent:#3560E0;
+  --accent-dim:#DCE6FF;
+  --green:#0F9D6E;
+  --green-dim:#DFF6EE;
+  --red:#D9403F;
+  --red-dim:#FBE3E2;
+  --amber:#B5791A;
+  --amber-dim:#FBEDD7;
+}
+[data-compact="1"] .card{padding:12px !important;}
+[data-compact="1"] table td, [data-compact="1"] table th{padding:6px 8px !important;}
+[data-compact="1"] .field{margin-bottom:8px !important;}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:14px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+#app{display:flex;min-height:100vh;}
+.sidebar{
+  width:var(--sidebar-w);
+  flex-shrink:0;
+  background:var(--bg-1);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  padding:20px 12px;
+  position:sticky;
+  top:0;
+  height:100vh;
+}
+.brand{
+  padding:4px 10px 20px 10px;
+  font-family:var(--mono);
+  letter-spacing:0.2px;
+}
+.brand .b1{font-size:15px;font-weight:600;color:var(--text);}
+.brand .b2{font-size:11px;color:var(--text-faint);margin-top:2px;}
+.navlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;}
+.navlist a{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 10px;border-radius:var(--radius);
+  color:var(--text-dim);text-decoration:none;font-size:13.5px;
+  border:1px solid transparent;
+}
+.navlist a svg{width:16px;height:16px;flex-shrink:0;opacity:0.85;}
+.navlist a:hover{background:var(--bg-2);color:var(--text);}
+.navlist a.active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent-dim);}
+.sidebar-foot{margin-top:auto;padding:10px;font-size:11px;color:var(--text-faint);font-family:var(--mono);}
+.bottom-nav{display:none;}
+main{flex:1;min-width:0;padding:24px 28px 90px 28px;max-width:1280px;}
+h1.page-title{font-size:19px;font-weight:600;margin:0 0 4px 0;}
+p.page-sub{color:var(--text-dim);margin:0 0 22px 0;font-size:13px;}
+.card{
+  background:var(--bg-1);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;
+}
+.grid{display:grid;gap:14px;}
+.grid-4{grid-template-columns:repeat(4,1fr);}
+.grid-3{grid-template-columns:repeat(3,1fr);}
+.grid-2{grid-template-columns:repeat(2,1fr);}
+@media(max-width:1000px){.grid-4{grid-template-columns:repeat(2,1fr);}.grid-3{grid-template-columns:repeat(2,1fr);}}
+.stat-card{padding:14px 16px;}
+.stat-label{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.4px;}
+.stat-value{font-family:var(--mono);font-size:22px;font-weight:600;margin-top:6px;}
+.stat-value.pos{color:var(--green);}
+.stat-value.neg{color:var(--red);}
+.section-title{font-size:13px;font-weight:600;color:var(--text-dim);margin:26px 0 10px 0;text-transform:none;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{
+  text-align:left;color:var(--text-faint);font-weight:500;font-size:11.5px;
+  padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;
+}
+td{padding:9px 10px;border-bottom:1px solid var(--border-soft);white-space:nowrap;font-family:var(--mono);font-size:12.5px;}
+tr.rowlink{cursor:pointer;}
+tr.rowlink:hover td{background:var(--bg-2);}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;font-family:var(--sans);}
+.badge.good-win{background:var(--green-dim);color:var(--green);}
+.badge.good-loss{background:var(--accent-dim);color:var(--accent);}
+.badge.bad-win{background:var(--amber-dim);color:var(--amber);}
+.badge.bad-loss{background:var(--red-dim);color:var(--red);}
+.badge.neutral{background:var(--bg-3);color:var(--text-dim);}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--bg-3);border:1px solid var(--border);color:var(--text);
+  padding:8px 14px;border-radius:var(--radius);font-size:13px;cursor:pointer;font-family:var(--sans);
+}
+.btn:hover{border-color:var(--text-faint);}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.btn.primary:hover{filter:brightness(1.08);}
+.btn.danger{background:var(--red-dim);border-color:var(--red-dim);color:var(--red);}
+.btn.ghost{background:transparent;border-color:transparent;}
+.btn.sm{padding:5px 10px;font-size:12px;}
+.btn:disabled{opacity:0.4;cursor:not-allowed;}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:5px;}
+.field .hint{font-size:11px;color:var(--text-faint);margin-top:4px;}
+input[type=text],input[type=number],input[type=date],input[type=time],input[type=datetime-local],select,textarea{
+  width:100%;background:var(--bg-2);border:1px solid var(--border);color:var(--text);
+  padding:8px 10px;border-radius:var(--radius);font-size:13px;font-family:var(--sans);
+}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);}
+textarea{min-height:70px;resize:vertical;font-family:var(--sans);}
+.chip-group{display:flex;flex-wrap:wrap;gap:6px;}
+.chip{
+  padding:6px 12px;border:1px solid var(--border);border-radius:20px;font-size:12.5px;cursor:pointer;
+  background:var(--bg-2);color:var(--text-dim);user-select:none;
+}
+.chip.selected{background:var(--accent-dim);border-color:var(--accent);color:var(--accent);}
+.check-row{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);}
+.check-row:last-child{border-bottom:none;}
+.check-row input[type=checkbox]{margin-top:2px;width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;}
+.check-row label{font-size:13px;color:var(--text);cursor:pointer;}
+.framework-box{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;background:var(--bg-2);}
+.framework-box .fw-title{font-family:var(--mono);font-size:12.5px;color:var(--accent);margin-bottom:2px;}
+.framework-box .fw-sub{font-size:12px;color:var(--text-dim);margin-bottom:10px;font-style:italic;}
+.wizard-steps{display:flex;gap:4px;margin-bottom:22px;flex-wrap:wrap;}
+.wizard-step{
+  flex:1;min-width:80px;text-align:center;padding:8px 4px;font-size:11.5px;color:var(--text-faint);
+  border-bottom:2px solid var(--border);cursor:pointer;
+}
+.wizard-step.active{color:var(--accent);border-color:var(--accent);}
+.wizard-step.done{color:var(--text-dim);border-color:var(--green);}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:18px;}
+.tab{padding:9px 14px;font-size:13px;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.tab.active{color:var(--text);border-color:var(--accent);}
+.modal-backdrop{
+  position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:flex-start;justify-content:center;
+  padding:4vh 16px;overflow-y:auto;z-index:100;
+}
+.modal{background:var(--bg-1);border:1px solid var(--border);border-radius:8px;max-width:760px;width:100%;padding:22px;}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;}
+.modal-head h2{font-size:16px;margin:0;}
+.close-x{cursor:pointer;color:var(--text-faint);font-size:20px;background:none;border:none;}
+.toast-root{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:200;}
+.toast{background:var(--bg-3);border:1px solid var(--border);padding:10px 16px;border-radius:var(--radius);font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,0.3);}
+.empty-state{text-align:center;padding:50px 20px;color:var(--text-faint);}
+.empty-state .big{font-size:14px;color:var(--text-dim);margin-bottom:6px;}
+.reminder-strip{
+  border:1px solid var(--border-soft);background:var(--bg-2);border-radius:var(--radius);
+  padding:10px 14px;font-size:12.5px;color:var(--text-dim);font-style:italic;margin-bottom:18px;
+}
+.filters-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;align-items:center;}
+.filters-bar select,.filters-bar input{width:auto;min-width:120px;}
+.sample-tag{font-size:11px;padding:2px 7px;border-radius:4px;background:var(--bg-3);color:var(--text-faint);}
+.sample-tag.useful{color:var(--green);}
+.sample-tag.developing{color:var(--amber);}
+.sample-tag.low{color:var(--text-faint);}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media(max-width:800px){.two-col{grid-template-columns:1fr;}}
+.thumb-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.thumb{width:74px;height:74px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer;}
+.upload-box{border:1px dashed var(--border);border-radius:var(--radius);padding:14px;text-align:center;color:var(--text-faint);font-size:12px;cursor:pointer;}
+.divider{height:1px;background:var(--border);margin:20px 0;}
+.kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;}
+.kv .k{color:var(--text-dim);}
+.kv .v{font-family:var(--mono);}
+.progress-note{font-size:12px;color:var(--text-faint);margin-top:-10px;margin-bottom:16px;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px;}
+@media(max-width:880px){
+  .sidebar{display:none;}
+  main{padding:16px 14px 90px 14px;}
+  .bottom-nav{
+    display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--bg-1);
+    border-top:1px solid var(--border);z-index:50;justify-content:space-around;padding:6px 0;
+  }
+  .bottom-nav a{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--text-faint);text-decoration:none;font-size:10px;padding:4px 6px;}
+  .bottom-nav a.active{color:var(--accent);}
+  .bottom-nav svg{width:18px;height:18px;}
+  .grid-4,.grid-3{grid-template-columns:1fr 1fr;}
+}
+</style>
+</head>
+<body data-theme="dark" data-compact="0">
+<div id="app">
+  <nav class="sidebar" id="sidebar">
+    <div class="brand"><div class="b1">EDGE RESEARCH</div><div class="b2">Personal Trading System</div></div>
+    <ul class="navlist" id="navlist"></ul>
+    <div class="sidebar-foot">v1.0 · local-first</div>
+  </nav>
+  <main id="main-content"></main>
+  <nav class="bottom-nav" id="bottomNav"></nav>
+</div>
+<div id="modal-root"></div>
+<div class="toast-root" id="toast-root"></div>
+
+<script>
+/* =========================================================================
+   EDGE RESEARCH SYSTEM — TRADING JOURNAL
+   Single-file local-first application (IndexedDB persistence)
+   ========================================================================= */
+
+/* ---------------------------------------------------------------------
+   1. FRAMEWORK — SOURCE OF TRUTH. Do not alter wording, order, or logic.
+   --------------------------------------------------------------------- */
+const FRAMEWORK = Object.freeze({
+  biasOptions: ["Reversal", "Continuation", "Opposing Setup forms", "Invalidation of EQ"],
+
+  confirmations: {
+    "Reversal": {
+      title: "Bias Daily Reversal | A+",
+      checks: [
+        { id: "c1", label: "Daily POI mitigated hand-left" },
+        { id: "c2", label: "1H CISD in C2 of Daily" },
+        { id: "c3", label: "4h Closure on Asia, London | 1h Closure on NY [H|OLD]" }
+      ]
+    },
+    "Continuation": {
+      title: "Bias Daily Continuation | A+",
+      checks: [
+        { id: "c1", label: "Daily confirm C2 Closure" },
+        { id: "c2", label: "Target Daily Unmitigated" },
+        { id: "c3", label: "[POI] FVG,OB on Validation zone" },
+        { id: "c4", label: "POI mitigated" },
+        { id: "c5", label: "4h Closure on Asia, London | 1h Closure on NY [H|OLD]" }
+      ]
+    },
+    "Opposing Setup forms": {
+      title: "Bias Daily Invalidation 2 options | A+",
+      subtitle: "Opposing Setup forms",
+      optionLabel: "Price manipulated H/L",
+      checks: [
+        { id: "c1", label: "Price manipulation PDH/L on Daily POI" },
+        { id: "c2", label: "SMT on Daily" }
+      ]
+    },
+    "Invalidation of EQ": {
+      title: "Bias Daily Invalidation 2 options | A+",
+      subtitle: "Invalidation of EQ",
+      optionLabel: "Price disrespected EQ",
+      checks: [
+        { id: "c1", label: "Disrespected POI" },
+        { id: "c2", label: "Mitigated EQ" },
+        { id: "c3", label: "NY Opposing C2 [15m CISD >confirm> 4h Closure]" }
+      ]
+    }
+  },
+
+  triggers: [
+    {
+      key: "asia_continuation", session: "Asia", label: "Asia : Continuation",
+      checks: [
+        { id: "t1", label: "CONFIRMATION C2 Previous Day [1h CISD >confirm> Daily Closure] , C2 Intraday [4h Closure]" },
+        { id: "t2", label: "ENTRY C3 [1h, 15m CISD]" }
+      ]
+    },
+    {
+      key: "asia_reversal", session: "Asia", label: "Asia : Reversal",
+      checks: [
+        { id: "t1", label: "CONFIRMATION C2 [15m CISD >confirm> 4h Closure]" },
+        { id: "t2", label: "ENTRY C3 [1h, 15m CISD]" }
+      ]
+    },
+    {
+      key: "london_reversal", session: "London", label: "London : Reversal",
+      checks: [
+        { id: "t1", label: "CONFIRMATION C2 [15m CISD >confirm> 4h Closure]" },
+        { id: "t2", label: "ENTRY C3 [30m, 15m CISD]" }
+      ]
+    },
+    {
+      key: "ny_reversal", session: "New York", label: "New York : Reversal",
+      checks: [
+        { id: "t1", label: "CONFIRMATION C2 [5m CISD >confirm> 1h Closure]" },
+        { id: "t2", label: "ENTRY C3 [5m CISD]" }
+      ]
+    },
+    {
+      key: "ny_invalidation", session: "New York", label: "New York : Invalidation opposing CISD",
+      checks: [
+        { id: "t1", label: "CONFIRMATION C2 [15m CISD >confirm> 4h Closure]" },
+        { id: "t2", label: "ENTRY C3 [5m CISD]" }
+      ]
+    }
+  ]
+});
+
+const SESSIONS = ["Asia", "London", "New York"];
+const MARKET_CONDITIONS = ["Expansion", "Retracement", "Consolidation", "Reversal"];
+const PSYCH_STATES = ["Calm", "Fear", "FOMO", "Greed", "Revenge", "Overconfidence", "Impatient", "Other"];
+const EXIT_TYPES = ["SL", "BE", "TP", "Trailing Stop", "Manual Exit", "Other"];
+const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+const REMINDERS = [
+  "I do not need to win this trade.",
+  "I do not need to pass today.",
+  "I do not need to make profit every day.",
+  "I do not need to prove anything to the market.",
+  "My job is to wait for my setup.",
+  "When it comes, I accept the defined risk.",
+  "When it ends, I accept the outcome.",
+  "Win without becoming overconfident.",
+  "Lose without becoming afraid.",
+  "Profit without becoming greedy.",
+  "Loss without revenge.",
+  "No Setup = No Trade."
+];
+
+/* ---------------------------------------------------------------------
+   2. INDEXEDDB LAYER
+   --------------------------------------------------------------------- */
+const DB_NAME = "edgeResearchDB";
+const DB_VERSION = 2; // v2: added "accounts" store (Account Management patch). Existing stores are untouched on upgrade.
+let dbInstance = null;
+let USE_MEMORY_FALLBACK = false; // true when IndexedDB is unavailable/blocked/hangs (e.g. sandboxed preview)
+
+// In-memory fallback store — same shape/keys as the IndexedDB stores. Used only when
+// real IndexedDB cannot be opened, so the app still loads and works (data just won't
+// persist across a reload in that specific environment).
+const MEM_STORE = { trades: new Map(), playbook: new Map(), weeklyReviews: new Map(), kv: new Map(), accounts: new Map() };
+const MEM_KEYPATH = { trades: "tradeId", playbook: "id", weeklyReviews: "id", kv: "key", accounts: "id" };
+
+function openDB() {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === "undefined" || !indexedDB) { USE_MEMORY_FALLBACK = true; resolve(null); return; }
+    let settled = false;
+    // Some sandboxed/embedded preview contexts silently hang on indexedDB.open() instead
+    // of firing onerror. A timeout guarantees the app always finishes loading either way.
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      USE_MEMORY_FALLBACK = true;
+      resolve(null);
+    }, 2500);
+    try {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains("trades")) db.createObjectStore("trades", { keyPath: "tradeId" });
+        if (!db.objectStoreNames.contains("playbook")) db.createObjectStore("playbook", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("weeklyReviews")) db.createObjectStore("weeklyReviews", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv", { keyPath: "key" });
+        if (!db.objectStoreNames.contains("accounts")) db.createObjectStore("accounts", { keyPath: "id" });
+      };
+      req.onsuccess = (e) => {
+        if (settled) return;
+        settled = true; clearTimeout(timeoutId);
+        dbInstance = e.target.result;
+        resolve(dbInstance);
+      };
+      req.onerror = () => {
+        if (settled) return;
+        settled = true; clearTimeout(timeoutId);
+        USE_MEMORY_FALLBACK = true;
+        resolve(null);
+      };
+      req.onblocked = () => { /* left to the timeout above */ };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      USE_MEMORY_FALLBACK = true;
+      resolve(null);
+    }
+  });
+}
+
+function tx(storeName, mode) {
+  return dbInstance.transaction(storeName, mode).objectStore(storeName);
+}
+function idbGetAll(storeName) {
+  if (USE_MEMORY_FALLBACK) return Promise.resolve(Array.from(MEM_STORE[storeName].values()));
+  return new Promise((resolve, reject) => {
+    const req = tx(storeName, "readonly").getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbGet(storeName, key) {
+  if (USE_MEMORY_FALLBACK) return Promise.resolve(MEM_STORE[storeName].has(key) ? MEM_STORE[storeName].get(key) : null);
+  return new Promise((resolve, reject) => {
+    const req = tx(storeName, "readonly").get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbPut(storeName, value) {
+  if (USE_MEMORY_FALLBACK) {
+    const kp = MEM_KEYPATH[storeName];
+    MEM_STORE[storeName].set(value[kp], value);
+    return Promise.resolve(value);
+  }
+  return new Promise((resolve, reject) => {
+    const req = tx(storeName, "readwrite").put(value);
+    req.onsuccess = () => resolve(value);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbDelete(storeName, key) {
+  if (USE_MEMORY_FALLBACK) { MEM_STORE[storeName].delete(key); return Promise.resolve(); }
+  return new Promise((resolve, reject) => {
+    const req = tx(storeName, "readwrite").delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbClear(storeName) {
+  if (USE_MEMORY_FALLBACK) { MEM_STORE[storeName].clear(); return Promise.resolve(); }
+  return new Promise((resolve, reject) => {
+    const req = tx(storeName, "readwrite").clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/* ---------------------------------------------------------------------
+   3. UTILITIES
+   --------------------------------------------------------------------- */
+function uuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function fmtNum(n, digits = 2) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return Number(n).toFixed(digits);
+}
+function fmtCurrency(n) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const sign = n < 0 ? "-" : "";
+  return sign + "$" + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtR(n) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const sign = n > 0 ? "+" : "";
+  return sign + Number(n).toFixed(2) + "R";
+}
+function fmtPF(n) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  if (n === Infinity) return "∞";
+  return fmtNum(n);
+}
+function fmtPct(n) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return Number(n).toFixed(1) + "%";
+}
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function nowTimeStr() {
+  const d = new Date();
+  return d.toTimeString().slice(0, 5);
+}
+function downloadFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsText(file);
+  });
+}
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+function toast(msg) {
+  const root = document.getElementById("toast-root");
+  const el = document.createElement("div");
+  el.className = "toast"; el.textContent = msg;
+  root.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+function csvEscape(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+/* ---------------------------------------------------------------------
+   4. DEFAULT SETTINGS
+   --------------------------------------------------------------------- */
+function defaultSettings() {
+  return {
+    key: "settings",
+    account: {
+      accountName: "My Account",
+      accountSize: 100000,
+      startingBalance: 100000,
+      profitTarget: 0,
+      maxDrawdown: 0,
+      dailyLossLimit: 0,
+      riskPerTrade: 1,
+      defaultContract: "",
+      defaultInstrument: "NQ"
+    },
+    journal: {
+      defaultSession: "New York",
+      defaultInstrument: "NQ",
+      defaultRisk: 200,
+      defaultRR: 2,
+      pointValue: 1
+    },
+    display: {
+      theme: "dark",
+      compact: false
+    },
+    riskControl: {
+      enforceMaxRisk: false,
+      maxRiskAmount: 0
+    },
+    goodExecutionThreshold: 70,
+    lastAccountId: null, // UI preference only — remembers last selected Account for New Trade
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+let SETTINGS = null;
+
+/* ---------------------------------------------------------------------
+   5. TRADE MODEL
+   --------------------------------------------------------------------- */
+function blankTrade() {
+  return {
+    tradeId: uuid(),
+    accountId: getPreferredAccountId(),
+    date: todayISO(),
+    time: nowTimeStr(),
+    session: SETTINGS?.journal?.defaultSession || "New York",
+    instrument: SETTINGS?.journal?.defaultInstrument || "NQ",
+    direction: "Long",
+
+    marketContext: {
+      dailyBias: "",
+      marketCondition: "",
+      dayHigh: "",
+      dayLow: ""
+    },
+
+    framework: {
+      bias: "",
+      confirmationTitle: "",
+      confirmationChecks: {},
+      trigger: "",
+      triggerChecks: {},
+      frameworkValid: null
+    },
+
+    execution: {
+      entry: "",
+      stopLoss: "",
+      target: "",
+      risk: "",
+      pointValue: SETTINGS?.journal?.pointValue || 1,
+      contracts: "",
+      plannedRR: "",
+      actualRR: ""
+    },
+
+    management: {
+      exitType: "",
+      exitPrice: "",
+      exitTime: "",
+      finalPnL: "",
+      finalR: "",
+      mfe: "",
+      mae: ""
+    },
+
+    executionReview: {
+      contextScore: 10,
+      frameworkScore: 10,
+      entryScore: 10,
+      riskScore: 10,
+      managementScore: 10,
+      totalScore: 50,
+      ruleBreak: "NO",
+      ruleBreakDescription: ""
+    },
+
+    psychology: {
+      before: [],
+      during: [],
+      after: [],
+      emotionalControl: 3
+    },
+
+    classification: {
+      goodWin: false,
+      goodLoss: false,
+      badWin: false,
+      badLoss: false,
+      label: ""
+    },
+
+    review: {
+      followedPlan: null,
+      validSetup: null,
+      lesson: "",
+      nextTime: ""
+    },
+
+    screenshots: { before: null, entry: null, after: null },
+
+    notes: "",
+    isDemo: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+/* ---------------------------------------------------------------------
+   5b. ACCOUNT MODEL (Account Management patch — additive only)
+   Accounts are a data dimension on top of the existing Framework/Journal.
+   They do not alter Framework, Bias, Confirmation, Trigger, or Analytics
+   formulas in any way — they only scope which Trades are included.
+   --------------------------------------------------------------------- */
+function blankAccount(seed) {
+  const now = new Date().toISOString();
+  return {
+    id: "acc_" + uuid(),
+    name: (seed && seed.name) || "New Account",
+    accountSize: (seed && seed.accountSize) || 0,
+    startingBalance: (seed && seed.startingBalance) || 0,
+    profitTarget: (seed && seed.profitTarget) || 0,
+    maxDrawdown: (seed && seed.maxDrawdown) || 0,
+    dailyLossLimit: (seed && seed.dailyLossLimit) || 0,
+    riskPerTrade: (seed && seed.riskPerTrade) || 0,
+    defaultContract: (seed && seed.defaultContract) || "",
+    defaultInstrument: (seed && seed.defaultInstrument) || "",
+    archived: false,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+// Centralized lookups/CRUD — reused everywhere instead of duplicating logic.
+function getAccounts() { return ACCOUNTS; }
+function getActiveAccounts() { return ACCOUNTS.filter(a => !a.archived); }
+function getAccountById(id) { return ACCOUNTS.find(a => a.id === id) || null; }
+async function saveAccount(account) {
+  account.updatedAt = new Date().toISOString();
+  await idbPut("accounts", account);
+  const idx = ACCOUNTS.findIndex(a => a.id === account.id);
+  if (idx >= 0) ACCOUNTS[idx] = account; else ACCOUNTS.push(account);
+  return account;
+}
+async function archiveAccount(id, archived) {
+  const acc = getAccountById(id);
+  if (!acc) return null;
+  acc.archived = archived;
+  return saveAccount(acc);
+}
+function resolveAccountName(accountId) {
+  const acc = getAccountById(accountId);
+  return acc ? acc.name : "Unknown Account";
+}
+// The account a new/legacy Trade should default to: last used (if still valid & active),
+// else the first active Account, else the first Account of any status, else null.
+function getPreferredAccountId() {
+  const lastId = SETTINGS && SETTINGS.lastAccountId;
+  if (lastId) {
+    const last = getAccountById(lastId);
+    if (last && !last.archived) return last.id;
+  }
+  const activeList = getActiveAccounts();
+  if (activeList.length) return activeList[0].id;
+  return ACCOUNTS.length ? ACCOUNTS[0].id : null;
+}
+async function setLastAccountId(id) {
+  if (!SETTINGS) return;
+  SETTINGS.lastAccountId = id;
+  await idbPut("kv", SETTINGS);
+}
+function getTradeById(id) { return TRADES.find(t => t.tradeId === id) || null; }
+
+/* ---------------------------------------------------------------------
+   6. CALCULATION ENGINE
+   --------------------------------------------------------------------- */
+function computeExecutionTotal(er) {
+  const c = Number(er.contextScore) || 0;
+  const f = Number(er.frameworkScore) || 0;
+  const e = Number(er.entryScore) || 0;
+  const r = Number(er.riskScore) || 0;
+  const m = Number(er.managementScore) || 0;
+  return c + f + e + r + m;
+}
+
+function computeClassification(trade) {
+  const finalR = Number(trade.management.finalR);
+  const hasResult = trade.management.finalR !== "" && trade.management.finalR !== null && !isNaN(finalR);
+  const frameworkValid = trade.review.validSetup === true;
+  const ruleBreak = trade.executionReview.ruleBreak === "YES";
+  const totalScore = computeExecutionTotal(trade.executionReview);
+  const goodExecution = totalScore >= (SETTINGS?.goodExecutionThreshold || 70) && !ruleBreak;
+
+  const cls = { goodWin: false, goodLoss: false, badWin: false, badLoss: false, label: "" };
+  if (!hasResult) { cls.label = "PENDING"; return cls; }
+  if (finalR === 0) { cls.label = "BREAKEVEN"; return cls; }
+
+  const isWin = finalR > 0;
+  const isGoodProcess = frameworkValid && goodExecution;
+
+  if (isGoodProcess && isWin) { cls.goodWin = true; cls.label = "GOOD WIN"; }
+  else if (isGoodProcess && !isWin) { cls.goodLoss = true; cls.label = "GOOD LOSS"; }
+  else if (!isGoodProcess && isWin) { cls.badWin = true; cls.label = "BAD WIN"; }
+  else { cls.badLoss = true; cls.label = "BAD LOSS"; }
+  return cls;
+}
+
+function deriveTrade(trade) {
+  // Execution score total
+  trade.executionReview.totalScore = computeExecutionTotal(trade.executionReview);
+  // Framework validity mirrors the user's own Final Review answer (never auto-decided from Framework text)
+  trade.framework.frameworkValid = trade.review.validSetup;
+  // Classification (process vs outcome separation)
+  trade.classification = computeClassification(trade);
+  trade.updatedAt = new Date().toISOString();
+  return trade;
+}
+
+function tradeResultType(trade) {
+  const fr = Number(trade.management.finalR);
+  if (trade.management.finalR === "" || trade.management.finalR === null || isNaN(fr)) return "pending";
+  if (fr > 0) return "win";
+  if (fr < 0) return "loss";
+  return "breakeven";
+}
+
+/* Aggregate statistics over an array of trades (closed trades only unless noted) */
+function computeAggregateStats(trades) {
+  const closed = trades.filter(t => tradeResultType(t) === "win" || tradeResultType(t) === "loss" || tradeResultType(t) === "breakeven");
+  const wins = closed.filter(t => tradeResultType(t) === "win");
+  const losses = closed.filter(t => tradeResultType(t) === "loss");
+  const n = closed.length;
+  const winRate = n ? (wins.length / n) * 100 : 0;
+  const lossRate = n ? (losses.length / n) * 100 : 0;
+  const avgWinR = wins.length ? wins.reduce((s, t) => s + Number(t.management.finalR), 0) / wins.length : 0;
+  const avgLossR = losses.length ? Math.abs(losses.reduce((s, t) => s + Number(t.management.finalR), 0) / losses.length) : 0;
+  const expectancy = (winRate / 100) * avgWinR - (lossRate / 100) * avgLossR;
+  const grossWinR = wins.reduce((s, t) => s + Number(t.management.finalR), 0);
+  const grossLossR = Math.abs(losses.reduce((s, t) => s + Number(t.management.finalR), 0));
+  const profitFactor = grossLossR > 0 ? grossWinR / grossLossR : (grossWinR > 0 ? Infinity : NaN);
+  const netR = closed.reduce((s, t) => s + (Number(t.management.finalR) || 0), 0);
+  const netPnL = closed.reduce((s, t) => s + (Number(t.management.finalPnL) || 0), 0);
+  const avgR = n ? netR / n : 0;
+  const avgExecution = trades.length ? trades.reduce((s, t) => s + (Number(t.executionReview.totalScore) || 0), 0) / trades.length : 0;
+  const validCount = trades.filter(t => t.review.validSetup === true).length;
+  const frameworkCompliance = trades.length ? (validCount / trades.length) * 100 : 0;
+
+  // Drawdown & streaks based on chronological R sequence
+  const chron = [...closed].sort((a, b) => new Date(a.date + "T" + (a.time || "00:00")) - new Date(b.date + "T" + (b.time || "00:00")));
+  let equity = 0, peak = 0, maxDD = 0;
+  let curStreak = 0, curType = null, winStreak = 0, lossStreak = 0;
+  chron.forEach(t => {
+    const r = Number(t.management.finalR) || 0;
+    equity += r;
+    if (equity > peak) peak = equity;
+    const dd = peak - equity;
+    if (dd > maxDD) maxDD = dd;
+    const rt = tradeResultType(t);
+    if (rt === curType) { curStreak++; } else { curStreak = 1; curType = rt; }
+    if (rt === "win") winStreak = Math.max(winStreak, curStreak);
+    if (rt === "loss") lossStreak = Math.max(lossStreak, curStreak);
+  });
+
+  return {
+    totalTrades: trades.length,
+    closedTrades: n,
+    winRate, lossRate, avgWinR, avgLossR, expectancy, profitFactor,
+    netR, netPnL, avgR, avgExecution, frameworkCompliance,
+    maxDrawdownR: maxDD, winStreak, lossStreak
+  };
+}
+
+function sampleSizeLabel(n) {
+  if (n >= 100) return { label: "Stronger Evidence", cls: "useful" };
+  if (n >= 50) return { label: "Useful Sample", cls: "useful" };
+  if (n >= 30) return { label: "Developing Sample", cls: "developing" };
+  if (n >= 10) return { label: "Low Sample", cls: "low" };
+  return { label: "Very Low Sample", cls: "low" };
+}
+
+/* Group trades by a dimension extractor function, return array of {key, trades, stats, sample} */
+function groupTrades(trades, keyFn) {
+  const map = new Map();
+  trades.forEach(t => {
+    const k = keyFn(t);
+    if (k === null || k === undefined || k === "") return;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(t);
+  });
+  const out = [];
+  map.forEach((list, key) => {
+    out.push({ key, trades: list, stats: computeAggregateStats(list), sample: sampleSizeLabel(list.length) });
+  });
+  return out;
+}
+
+const DIMENSIONS = {
+  bias: { label: "Bias", fn: t => t.framework.bias },
+  trigger: { label: "Trigger", fn: t => t.framework.trigger },
+  session: { label: "Session", fn: t => t.session },
+  dayOfWeek: { label: "Day of Week", fn: t => DAY_NAMES[new Date(t.date + "T00:00:00").getDay()] },
+  marketCondition: { label: "Market Condition", fn: t => t.marketContext.marketCondition },
+  direction: { label: "Direction", fn: t => t.direction },
+  executionBucket: { label: "Execution Score", fn: t => {
+      const s = Number(t.executionReview.totalScore);
+      if (isNaN(s)) return "";
+      if (s >= 90) return "90–100"; if (s >= 80) return "80–89"; if (s >= 70) return "70–79";
+      if (s >= 60) return "60–69"; return "Below 60";
+    } },
+  classification: { label: "Classification", fn: t => t.classification.label },
+  frameworkValidity: { label: "Framework Valid", fn: t => t.review.validSetup === true ? "Valid" : (t.review.validSetup === false ? "Invalid" : "") }
+};
+
+/* ---------------------------------------------------------------------
+   7. APP STATE / ROUTER
+   --------------------------------------------------------------------- */
+let TRADES = [];
+let PLAYBOOKS = [];
+let REVIEWS = [];
+let ACCOUNTS = [];
+
+const ROUTES = [
+  { hash: "#/dashboard", label: "Dashboard", icon: "grid" },
+  { hash: "#/new-trade", label: "New Trade", icon: "plus" },
+  { hash: "#/journal", label: "Journal", icon: "list" },
+  { hash: "#/analytics", label: "Analytics", icon: "chart" },
+  { hash: "#/review", label: "Review", icon: "check" },
+  { hash: "#/playbook", label: "Playbook", icon: "book" },
+  { hash: "#/settings", label: "Settings", icon: "gear" }
+];
+const ICONS = {
+  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 6L9 17l-5-5"/></svg>',
+  book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 4.5A2.5 2.5 0 016.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15z"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 005 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09A1.65 1.65 0 0019.4 15z"/></svg>'
+};
+
+function navigateTo(hash) {
+  if (location.hash === hash) { router(); return; }
+  location.hash = hash;
+}
+
+function renderNav() {
+  const cur = location.hash || "#/dashboard";
+  const navlist = document.getElementById("navlist");
+  navlist.innerHTML = ROUTES.map(r => `<li><a data-hash="${r.hash}" tabindex="0" role="link" class="${cur.startsWith(r.hash) ? 'active' : ''}">${ICONS[r.icon]}<span>${r.label}</span></a></li>`).join("");
+  const bn = document.getElementById("bottomNav");
+  bn.innerHTML = ROUTES.map(r => `<a data-hash="${r.hash}" tabindex="0" role="link" class="${cur.startsWith(r.hash) ? 'active' : ''}">${ICONS[r.icon]}<span>${r.label}</span></a>`).join("");
+  [...navlist.querySelectorAll("a[data-hash]"), ...bn.querySelectorAll("a[data-hash]")].forEach(el => {
+    el.style.cursor = "pointer";
+    el.onclick = (e) => { e.preventDefault(); navigateTo(el.dataset.hash); };
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigateTo(el.dataset.hash); } };
+  });
+}
+
+function router() {
+  renderNav();
+  const hash = location.hash || "#/dashboard";
+  const main = document.getElementById("main-content");
+  main.scrollTop = 0;
+  window.scrollTo(0, 0);
+  if (hash.startsWith("#/dashboard")) return renderDashboard(main);
+  if (hash.startsWith("#/new-trade")) return renderNewTrade(main);
+  if (hash.startsWith("#/edit-trade/")) return renderNewTrade(main, hash.split("/")[2]);
+  if (hash.startsWith("#/journal")) return renderJournal(main);
+  if (hash.startsWith("#/analytics")) return renderAnalytics(main);
+  if (hash.startsWith("#/review")) return renderReview(main);
+  if (hash.startsWith("#/playbook")) return renderPlaybook(main);
+  if (hash.startsWith("#/settings")) return renderSettings(main);
+  location.hash = "#/dashboard";
+}
+window.addEventListener("hashchange", router);
+
+/* ---------------------------------------------------------------------
+   8. DASHBOARD
+   --------------------------------------------------------------------- */
+let dashboardAccountId = "";
+function renderDashboard(main) {
+  const dashTrades = dashboardAccountId ? TRADES.filter(t => t.accountId === dashboardAccountId) : TRADES;
+  const acc = dashboardAccountId
+    ? (getAccountById(dashboardAccountId) ? {
+        accountName: getAccountById(dashboardAccountId).name,
+        accountSize: getAccountById(dashboardAccountId).accountSize,
+        startingBalance: getAccountById(dashboardAccountId).startingBalance,
+        maxDrawdown: getAccountById(dashboardAccountId).maxDrawdown
+      } : { accountName: "Unknown Account", accountSize: 0, startingBalance: 0, maxDrawdown: 0 })
+    : {
+        accountName: "All Accounts",
+        accountSize: ACCOUNTS.reduce((s, a) => s + (Number(a.accountSize) || 0), 0),
+        startingBalance: ACCOUNTS.reduce((s, a) => s + (Number(a.startingBalance) || 0), 0),
+        maxDrawdown: ACCOUNTS.reduce((s, a) => s + (Number(a.maxDrawdown) || 0), 0)
+      };
+  const closedForBalance = dashTrades.filter(t => tradeResultType(t) !== "pending");
+  const netPnL = closedForBalance.reduce((s, t) => s + (Number(t.management.finalPnL) || 0), 0);
+  const currentBalance = Number(acc.startingBalance) + netPnL;
+  const drawdownUsed = Math.max(0, Number(acc.startingBalance) - Math.min(currentBalance, Number(acc.startingBalance)));
+  const remainingDrawdown = Number(acc.maxDrawdown) ? Math.max(0, Number(acc.maxDrawdown) - drawdownUsed) : null;
+
+  const stats = computeAggregateStats(dashTrades);
+
+  const today = todayISO();
+  const todayTrades = dashTrades.filter(t => t.date === today);
+  let todayStatus = "NO TRADE";
+  if (todayTrades.length) {
+    const hasClosed = todayTrades.some(t => tradeResultType(t) !== "pending");
+    const hasOpen = todayTrades.some(t => tradeResultType(t) === "pending");
+    todayStatus = hasOpen ? "TRADE TAKEN — MANAGING" : (hasClosed ? "TRADE TAKEN" : "SETUP DEVELOPING");
+  }
+
+  const recent = [...dashTrades].sort((a, b) => new Date(b.date + "T" + (b.time || "00:00")) - new Date(a.date + "T" + (a.time || "00:00"))).slice(0, 8);
+
+  // Equity curve (real journal data only)
+  const chron = [...closedForBalance].sort((a, b) => new Date(a.date + "T" + (a.time || "00:00")) - new Date(b.date + "T" + (b.time || "00:00")));
+  let running = Number(acc.startingBalance);
+  const points = [{ x: 0, y: running }];
+  chron.forEach((t, i) => { running += (Number(t.management.finalPnL) || 0); points.push({ x: i + 1, y: running }); });
+
+  const reminder = REMINDERS[new Date().getDate() % REMINDERS.length];
+
+  let philosophyNote = "";
+  if (!todayTrades.length) philosophyNote = "NO TRADE IS ALSO A DECISION.";
+  else if (todayTrades.some(t => tradeResultType(t) === "loss")) philosophyNote = "Process Review Required.";
+  else if (todayTrades.some(t => tradeResultType(t) === "win")) philosophyNote = "Review Execution.";
+
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-sub">ตอนนี้ฉันกำลังทำได้ดีแค่ไหน?</p>
+      </div>
+      <div class="field" style="min-width:200px;margin-bottom:0;">
+        <label>Account</label>
+        <select id="dashAccountFilter">
+          <option value="">All Accounts</option>
+          ${ACCOUNTS.map(a => `<option value="${a.id}" ${dashboardAccountId===a.id?'selected':''}>${esc(a.name)}${a.archived?' (archived)':''}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="reminder-strip">${esc(reminder)}</div>
+
+    <div class="section-title">Account — ${esc(acc.accountName)}</div>
+    <div class="grid grid-4">
+      <div class="card stat-card"><div class="stat-label">Account Size</div><div class="stat-value">${fmtCurrency(acc.accountSize)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Current Balance</div><div class="stat-value ${netPnL >= 0 ? 'pos' : 'neg'}">${fmtCurrency(currentBalance)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Current P&amp;L</div><div class="stat-value ${netPnL >= 0 ? 'pos' : 'neg'}">${fmtCurrency(netPnL)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Remaining Drawdown</div><div class="stat-value">${remainingDrawdown === null ? '—' : fmtCurrency(remainingDrawdown)}</div></div>
+    </div>
+
+    <div class="section-title">Performance</div>
+    <div class="grid grid-4">
+      <div class="card stat-card"><div class="stat-label">Total Trades</div><div class="stat-value">${stats.totalTrades}</div></div>
+      <div class="card stat-card"><div class="stat-label">Win Rate</div><div class="stat-value">${fmtPct(stats.winRate)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Average R</div><div class="stat-value ${stats.avgR>=0?'pos':'neg'}">${fmtR(stats.avgR)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Expectancy</div><div class="stat-value ${stats.expectancy>=0?'pos':'neg'}">${fmtR(stats.expectancy)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Profit Factor</div><div class="stat-value">${fmtPF(stats.profitFactor)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Net P&amp;L</div><div class="stat-value ${stats.netPnL>=0?'pos':'neg'}">${fmtCurrency(stats.netPnL)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Avg Execution Score</div><div class="stat-value">${fmtNum(stats.avgExecution,1)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Framework Compliance</div><div class="stat-value">${fmtPct(stats.frameworkCompliance)}</div></div>
+    </div>
+
+    <div class="section-title">Today</div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-family:var(--mono);font-size:15px;font-weight:600;">${esc(todayStatus)}</div>
+          <div style="font-size:12px;color:var(--text-faint);margin-top:4px;">Journal status only — this is not a market prediction.</div>
+        </div>
+        <div class="badge neutral" style="font-size:12px;">${esc(philosophyNote)}</div>
+      </div>
+    </div>
+
+    <div class="section-title">Equity Curve</div>
+    <div class="card">
+      ${points.length > 1 ? renderSparkline(points) : '<div class="empty-state">No closed trades yet — the curve begins after your first result.</div>'}
+    </div>
+
+    <div class="section-title">Recent Trades</div>
+    <div class="card" style="padding:0;overflow-x:auto;">
+      ${recent.length === 0 ? '<div class="empty-state"><div class="big">No trades logged yet.</div>New Trade → start your journal.</div>' : `
+      <table>
+        <thead><tr><th>Date</th><th>Account</th><th>Session</th><th>Bias</th><th>Trigger</th><th>Result</th><th>R</th><th>Execution</th></tr></thead>
+        <tbody>
+        ${recent.map(t => `
+          <tr class="rowlink" onclick="location.hash='#/journal'">
+            <td>${esc(t.date)}</td>
+            <td>${esc(resolveAccountName(t.accountId))}</td>
+            <td>${esc(t.session)}</td>
+            <td>${esc(t.framework.bias)}</td>
+            <td>${esc(t.framework.trigger)}</td>
+            <td>${classificationBadge(t)}</td>
+            <td class="${Number(t.management.finalR)>0?'pos':(Number(t.management.finalR)<0?'neg':'')}">${fmtR(t.management.finalR)}</td>
+            <td>${t.executionReview.totalScore ?? '—'}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`}
+    </div>
+  `;
+  document.getElementById("dashAccountFilter").onchange = e => { dashboardAccountId = e.target.value; renderDashboard(main); };
+}
+
+function classificationBadge(t) {
+  const l = t.classification.label;
+  if (!l || l === "PENDING") return '<span class="badge neutral">PENDING</span>';
+  if (l === "BREAKEVEN") return '<span class="badge neutral">BREAKEVEN</span>';
+  const cls = l.toLowerCase().replace(" ", "-");
+  return `<span class="badge ${cls}">${esc(l)}</span>`;
+}
+
+function renderSparkline(points) {
+  const w = 900, h = 180, pad = 20;
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const rangeY = (maxY - minY) || 1;
+  const maxX = Math.max(...xs) || 1;
+  const path = points.map((p, i) => {
+    const x = pad + (p.x / maxX) * (w - pad * 2);
+    const y = h - pad - ((p.y - minY) / rangeY) * (h - pad * 2);
+    return (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+  }).join(" ");
+  const last = points[points.length - 1];
+  const color = last.y >= points[0].y ? "var(--green)" : "var(--red)";
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:180px;">
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>
+  </svg>`;
+}
+
+/* ---------------------------------------------------------------------
+   9. NEW TRADE (multi-step wizard)
+   --------------------------------------------------------------------- */
+let wizardTrade = null;
+let wizardStep = 0;
+let wizardEditingId = null;
+const WIZARD_STEPS = ["Context", "Framework", "Trigger", "Execution", "Management", "Review"];
+
+function renderNewTrade(main, editId) {
+  if (editId) {
+    if (!wizardTrade || wizardEditingId !== editId) {
+      const found = TRADES.find(t => t.tradeId === editId);
+      wizardTrade = found ? JSON.parse(JSON.stringify(found)) : blankTrade();
+      wizardEditingId = editId;
+      wizardStep = 0;
+    }
+  } else if (!wizardTrade || wizardEditingId) {
+    wizardTrade = blankTrade();
+    wizardEditingId = null;
+    wizardStep = 0;
+  }
+
+  main.innerHTML = `
+    <h1 class="page-title">${wizardEditingId ? "Edit Trade" : "New Trade"}</h1>
+    <p class="page-sub">Record the setup exactly as it happened. Fast entry, no forced fields beyond what's needed.</p>
+    <div class="wizard-steps" id="wizardSteps"></div>
+    <div id="wizardBody" class="card"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:16px;">
+      <button class="btn" id="wizPrev">Back</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" id="wizSaveDraft">Save &amp; exit</button>
+        <button class="btn primary" id="wizNext">Next</button>
+      </div>
+    </div>
+  `;
+  renderWizardSteps();
+  renderWizardStepBody();
+
+  document.getElementById("wizPrev").onclick = () => { if (wizardStep > 0) { wizardStep--; renderWizardSteps(); renderWizardStepBody(); } else { location.hash = "#/journal"; } };
+  document.getElementById("wizNext").onclick = () => {
+    if (wizardStep < WIZARD_STEPS.length - 1) { wizardStep++; renderWizardSteps(); renderWizardStepBody(); }
+    else { saveWizardTrade(); }
+  };
+  document.getElementById("wizSaveDraft").onclick = async () => {
+    if (!wizardTrade.accountId) { toast("Please select an Account before saving."); wizardStep = 0; renderWizardSteps(); renderWizardStepBody(); return; }
+    await persistTrade(wizardTrade); toast("Trade saved."); location.hash = "#/journal";
+  };
+}
+
+function renderWizardSteps() {
+  document.getElementById("wizardSteps").innerHTML = WIZARD_STEPS.map((s, i) => `
+    <div class="wizard-step ${i === wizardStep ? 'active' : (i < wizardStep ? 'done' : '')}" data-step="${i}">${i + 1}. ${s}</div>
+  `).join("");
+  document.getElementById("wizardSteps").querySelectorAll(".wizard-step").forEach(el => {
+    el.onclick = () => { wizardStep = Number(el.dataset.step); renderWizardSteps(); renderWizardStepBody(); };
+  });
+  document.getElementById("wizNext") && (document.getElementById("wizNext").textContent = wizardStep === WIZARD_STEPS.length - 1 ? "Save Trade" : "Next");
+}
+
+function renderWizardStepBody() {
+  const body = document.getElementById("wizardBody");
+  const t = wizardTrade;
+  if (wizardStep === 0) {
+    const selectableAccounts = getActiveAccounts().slice();
+    // Keep the trade's current account selectable even if it has since been archived (edit mode).
+    if (t.accountId && !selectableAccounts.some(a => a.id === t.accountId)) {
+      const cur = getAccountById(t.accountId);
+      if (cur) selectableAccounts.push(cur);
+    }
+    body.innerHTML = `
+      <div class="field">
+        <label>Account</label>
+        <select id="f_accountId">
+          ${selectableAccounts.map(a => `<option value="${a.id}" ${t.accountId===a.id?'selected':''}>${esc(a.name)}${a.archived?' (archived)':''}</option>`).join("")}
+        </select>
+        <div class="hint">${selectableAccounts.length ? 'Every Trade belongs to exactly one Account.' : 'No Accounts yet — add one in Settings → Accounts first.'}</div>
+      </div>
+      <div class="divider"></div>
+      <div class="grid grid-3">
+        <div class="field"><label>Date</label><input type="date" id="f_date" value="${t.date}"></div>
+        <div class="field"><label>Time</label><input type="time" id="f_time" value="${t.time}"></div>
+        <div class="field"><label>Session</label><select id="f_session">${SESSIONS.map(s => `<option ${t.session===s?'selected':''}>${s}</option>`).join("")}</select></div>
+        <div class="field"><label>Instrument</label><input type="text" id="f_instrument" value="${esc(t.instrument)}" placeholder="NQ, MNQ, ES, MES..."></div>
+        <div class="field"><label>Direction</label><select id="f_direction"><option ${t.direction==='Long'?'selected':''}>Long</option><option ${t.direction==='Short'?'selected':''}>Short</option></select></div>
+        <div class="field"><label>Market Condition <span class="hint">(journal metadata only)</span></label>
+          <select id="f_marketCondition"><option value=""></option>${MARKET_CONDITIONS.map(m => `<option ${t.marketContext.marketCondition===m?'selected':''}>${m}</option>`).join("")}</select>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="grid grid-2">
+        <div class="field"><label>Day High</label><input type="text" id="f_dayHigh" value="${esc(t.marketContext.dayHigh)}"></div>
+        <div class="field"><label>Day Low</label><input type="text" id="f_dayLow" value="${esc(t.marketContext.dayLow)}"></div>
+      </div>
+    `;
+    bindStep0();
+  } else if (wizardStep === 1) {
+    renderFrameworkStep(body, t);
+  } else if (wizardStep === 2) {
+    renderTriggerStep(body, t);
+  } else if (wizardStep === 3) {
+    body.innerHTML = `
+      <div class="grid grid-3">
+        <div class="field"><label>Entry Price</label><input type="number" step="any" id="f_entry" value="${t.execution.entry}"></div>
+        <div class="field"><label>Stop Loss Price</label><input type="number" step="any" id="f_sl" value="${t.execution.stopLoss}"></div>
+        <div class="field"><label>Target Price</label><input type="number" step="any" id="f_target" value="${t.execution.target}"></div>
+        <div class="field"><label>Contracts</label><input type="number" step="any" id="f_contracts" value="${t.execution.contracts}"></div>
+        <div class="field"><label>Point Value ($/pt/contract)</label><input type="number" step="any" id="f_pointValue" value="${t.execution.pointValue}"></div>
+        <div class="field"><label>Risk Amount ($) <span class="hint">override if needed</span></label><input type="number" step="any" id="f_risk" value="${t.execution.risk}"></div>
+      </div>
+      <div class="divider"></div>
+      <div class="grid grid-2">
+        <div class="kv"><span class="k">Calculated Risk ($)</span><span class="v" id="calcRisk">—</span></div>
+        <div class="kv"><span class="k">Potential Reward ($)</span><span class="v" id="calcReward">—</span></div>
+        <div class="kv"><span class="k">Planned R:R</span><span class="v" id="calcRR">—</span></div>
+        <div class="field"><label>R:R Actual (override)</label><input type="number" step="any" id="f_actualRR" value="${t.execution.actualRR}"></div>
+      </div>
+      <div id="riskWarning"></div>
+    `;
+    bindStep3();
+  } else if (wizardStep === 4) {
+    body.innerHTML = `
+      <div class="grid grid-3">
+        <div class="field"><label>Exit Type</label><select id="f_exitType"><option value=""></option>${EXIT_TYPES.map(e => `<option ${t.management.exitType===e?'selected':''}>${e}</option>`).join("")}</select></div>
+        <div class="field"><label>Exit Price</label><input type="number" step="any" id="f_exitPrice" value="${t.management.exitPrice}"></div>
+        <div class="field"><label>Exit Time</label><input type="time" id="f_exitTime" value="${t.management.exitTime}"></div>
+        <div class="field"><label>Final P&amp;L ($)</label><input type="number" step="any" id="f_finalPnL" value="${t.management.finalPnL}"></div>
+        <div class="field"><label>Final R (auto or override)</label><input type="number" step="any" id="f_finalR" value="${t.management.finalR}"></div>
+        <div class="field"></div>
+        <div class="field"><label>MFE (R) — Maximum Favorable Excursion</label><input type="number" step="any" id="f_mfe" value="${t.management.mfe}"></div>
+        <div class="field"><label>MAE (R) — Maximum Adverse Excursion</label><input type="number" step="any" id="f_mae" value="${t.management.mae}"></div>
+      </div>
+      <div class="hint" style="margin-top:-6px;">No fixed TP model is enforced — trailing stops and manual exits are fully supported.</div>
+    `;
+    bindStep4();
+  } else if (wizardStep === 5) {
+    renderReviewStep(body, t);
+  }
+}
+
+function bindStep0() {
+  const t = wizardTrade;
+  const accSel = document.getElementById("f_accountId");
+  if (accSel) accSel.onchange = e => { t.accountId = e.target.value; setLastAccountId(e.target.value); };
+  ["date","time","session","instrument","direction"].forEach(f => {
+    document.getElementById("f_" + f).oninput = e => { t[f] = e.target.value; };
+  });
+  document.getElementById("f_marketCondition").oninput = e => t.marketContext.marketCondition = e.target.value;
+  document.getElementById("f_dayHigh").oninput = e => t.marketContext.dayHigh = e.target.value;
+  document.getElementById("f_dayLow").oninput = e => t.marketContext.dayLow = e.target.value;
+}
+
+function renderFrameworkStep(body, t) {
+  body.innerHTML = `
+    <div class="field">
+      <label>Daily Bias <span class="hint">รูปแบบการปิดของ Previous day + POI — select from Framework only</span></label>
+      <div class="chip-group" id="biasChips">
+        ${FRAMEWORK.biasOptions.map(b => `<div class="chip ${t.framework.bias===b?'selected':''}" data-bias="${esc(b)}">${esc(b)}</div>`).join("")}
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div id="confirmationArea"></div>
+  `;
+  document.querySelectorAll("#biasChips .chip").forEach(chip => {
+    chip.onclick = () => {
+      const bias = chip.dataset.bias;
+      if (t.framework.bias !== bias) {
+        t.framework.bias = bias;
+        t.marketContext.dailyBias = bias;
+        t.framework.confirmationChecks = {};
+        const conf = FRAMEWORK.confirmations[bias];
+        t.framework.confirmationTitle = conf.title;
+      }
+      renderFrameworkStep(body, t);
+    };
+  });
+  renderConfirmationArea(t);
+}
+
+function renderConfirmationArea(t) {
+  const area = document.getElementById("confirmationArea");
+  if (!t.framework.bias) { area.innerHTML = '<div class="hint">Select a Daily Bias to reveal its Confirmation checklist.</div>'; return; }
+  const conf = FRAMEWORK.confirmations[t.framework.bias];
+  area.innerHTML = `
+    <div class="framework-box">
+      <div class="fw-title">${esc(conf.title)}</div>
+      ${conf.subtitle ? `<div class="fw-sub">• ${esc(conf.subtitle)} | ${esc(conf.optionLabel)}</div>` : ""}
+      ${conf.checks.map(c => `
+        <div class="check-row">
+          <input type="checkbox" id="chk_${c.id}" ${t.framework.confirmationChecks[c.id] ? 'checked' : ''}>
+          <label for="chk_${c.id}">${esc(c.label)}</label>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  conf.checks.forEach(c => {
+    document.getElementById("chk_" + c.id).onchange = e => { t.framework.confirmationChecks[c.id] = e.target.checked; };
+  });
+}
+
+function renderTriggerStep(body, t) {
+  const relevant = FRAMEWORK.triggers.filter(tr => tr.session === t.session);
+  const all = relevant.length ? relevant : FRAMEWORK.triggers;
+  body.innerHTML = `
+    <div class="field">
+      <label>Entry Intraday Model — H/L of the day <span class="hint">filtered by Session (${esc(t.session)}); switch Session in Step 1 to see other models</span></label>
+      <div class="chip-group" id="triggerChips">
+        ${all.map(tr => `<div class="chip ${t.framework.trigger===tr.label?'selected':''}" data-key="${tr.key}">${esc(tr.label)}</div>`).join("")}
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div id="triggerArea"></div>
+  `;
+  document.querySelectorAll("#triggerChips .chip").forEach(chip => {
+    chip.onclick = () => {
+      const tr = FRAMEWORK.triggers.find(x => x.key === chip.dataset.key);
+      if (t.framework.trigger !== tr.label) {
+        t.framework.trigger = tr.label;
+        t.framework.triggerChecks = {};
+      }
+      renderTriggerStep(body, t);
+    };
+  });
+  renderTriggerArea(t);
+}
+function renderTriggerArea(t) {
+  const area = document.getElementById("triggerArea");
+  if (!t.framework.trigger) { area.innerHTML = '<div class="hint">Select a Trigger model to reveal its checklist.</div>'; return; }
+  const tr = FRAMEWORK.triggers.find(x => x.label === t.framework.trigger);
+  area.innerHTML = `
+    <div class="framework-box">
+      <div class="fw-title">${esc(tr.label)}</div>
+      ${tr.checks.map(c => `
+        <div class="check-row">
+          <input type="checkbox" id="trg_${c.id}" ${t.framework.triggerChecks[c.id] ? 'checked' : ''}>
+          <label for="trg_${c.id}">${esc(c.label)}</label>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  tr.checks.forEach(c => {
+    document.getElementById("trg_" + c.id).onchange = e => { t.framework.triggerChecks[c.id] = e.target.checked; };
+  });
+}
+
+function bindStep3() {
+  const t = wizardTrade;
+  const recalc = () => {
+    const entry = Number(t.execution.entry), sl = Number(t.execution.stopLoss), target = Number(t.execution.target);
+    const contracts = Number(t.execution.contracts) || 0, pv = Number(t.execution.pointValue) || 1;
+    let riskCalc = null, rewardCalc = null, rr = null;
+    if (!isNaN(entry) && !isNaN(sl) && contracts) riskCalc = Math.abs(entry - sl) * contracts * pv;
+    if (!isNaN(entry) && !isNaN(target) && contracts) rewardCalc = Math.abs(target - entry) * contracts * pv;
+    if (riskCalc && rewardCalc) rr = rewardCalc / riskCalc;
+    document.getElementById("calcRisk").textContent = riskCalc !== null ? fmtCurrency(riskCalc) : "—";
+    document.getElementById("calcReward").textContent = rewardCalc !== null ? fmtCurrency(rewardCalc) : "—";
+    document.getElementById("calcRR").textContent = rr !== null ? fmtNum(rr) + " : 1" : "—";
+    t.execution.plannedRR = rr !== null ? rr.toFixed(2) : "";
+    if (!t.execution.risk && riskCalc !== null) t.execution.risk = riskCalc.toFixed(2);
+    const warnEl = document.getElementById("riskWarning");
+    const maxRisk = Number(SETTINGS.riskControl.maxRiskAmount);
+    const effectiveRisk = Number(t.execution.risk) || riskCalc;
+    if (SETTINGS.riskControl.enforceMaxRisk && maxRisk && effectiveRisk && effectiveRisk > maxRisk) {
+      warnEl.innerHTML = `<div class="hint" style="color:var(--red);margin-top:10px;">WARNING: Risk exceeds configured maximum (${fmtCurrency(maxRisk)}).</div>`;
+    } else { warnEl.innerHTML = ""; }
+  };
+  ["entry","stopLoss","target","contracts","pointValue","risk"].forEach(f => {
+    const id = "f_" + (f === "stopLoss" ? "sl" : f);
+    document.getElementById(id).oninput = e => { t.execution[f] = e.target.value; recalc(); };
+  });
+  document.getElementById("f_actualRR").oninput = e => t.execution.actualRR = e.target.value;
+  recalc();
+}
+
+function bindStep4() {
+  const t = wizardTrade;
+  document.getElementById("f_exitType").oninput = e => t.management.exitType = e.target.value;
+  document.getElementById("f_exitPrice").oninput = e => t.management.exitPrice = e.target.value;
+  document.getElementById("f_exitTime").oninput = e => t.management.exitTime = e.target.value;
+  document.getElementById("f_mfe").oninput = e => t.management.mfe = e.target.value;
+  document.getElementById("f_mae").oninput = e => t.management.mae = e.target.value;
+  const finalPnLInput = document.getElementById("f_finalPnL");
+  const finalRInput = document.getElementById("f_finalR");
+  finalPnLInput.oninput = e => {
+    t.management.finalPnL = e.target.value;
+    const risk = Number(t.execution.risk);
+    if (risk) { const r = Number(e.target.value) / risk; finalRInput.value = r.toFixed(2); t.management.finalR = r.toFixed(2); }
+  };
+  finalRInput.oninput = e => { t.management.finalR = e.target.value; };
+}
+
+function renderReviewStep(body, t) {
+  const total = computeExecutionTotal(t.executionReview);
+  body.innerHTML = `
+    <div class="section-title" style="margin-top:0;">Execution Score — how well did I execute? (not whether I won)</div>
+    <div class="grid grid-2">
+      ${["contextScore:Context","frameworkScore:Framework Execution","entryScore:Entry","riskScore:Risk","managementScore:Management"].map(pair => {
+        const [key, label] = pair.split(":");
+        return `<div class="field"><label>${label} (0–20)</label><input type="number" min="0" max="20" id="es_${key}" value="${t.executionReview[key]}"></div>`;
+      }).join("")}
+      <div class="field"><label>Total</label><div class="stat-value" id="es_total" style="margin-top:0;">${total} / 100</div></div>
+    </div>
+    <div class="grid grid-2">
+      <div class="field"><label>Rule Break?</label><select id="es_ruleBreak"><option ${t.executionReview.ruleBreak==='NO'?'selected':''}>NO</option><option ${t.executionReview.ruleBreak==='YES'?'selected':''}>YES</option></select></div>
+      <div class="field"><label>Rule Break Description</label><input type="text" id="es_ruleDesc" value="${esc(t.executionReview.ruleBreakDescription)}"></div>
+    </div>
+    <div class="divider"></div>
+    <div class="section-title" style="margin-top:0;">Psychology</div>
+    <div class="grid grid-3">
+      <div class="field"><label>Before</label><div class="chip-group" id="psychBefore">${PSYCH_STATES.map(s => `<div class="chip ${t.psychology.before.includes(s)?'selected':''}" data-s="${s}">${s}</div>`).join("")}</div></div>
+      <div class="field"><label>During</label><div class="chip-group" id="psychDuring">${PSYCH_STATES.map(s => `<div class="chip ${t.psychology.during.includes(s)?'selected':''}" data-s="${s}">${s}</div>`).join("")}</div></div>
+      <div class="field"><label>After</label><div class="chip-group" id="psychAfter">${PSYCH_STATES.map(s => `<div class="chip ${t.psychology.after.includes(s)?'selected':''}" data-s="${s}">${s}</div>`).join("")}</div></div>
+    </div>
+    <div class="field"><label>Emotional Control (0–5)</label><input type="number" min="0" max="5" id="emoControl" value="${t.psychology.emotionalControl}"></div>
+    <div class="divider"></div>
+    <div class="section-title" style="margin-top:0;">Screenshots</div>
+    <div class="grid grid-3">
+      ${["before","entry","after"].map(k => `
+        <div>
+          <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:5px;text-transform:capitalize;">${k}</label>
+          <input type="file" accept="image/*" id="shot_${k}" style="font-size:11px;">
+          <div class="thumb-row">${t.screenshots[k] ? `<img class="thumb" src="${t.screenshots[k]}">` : ""}</div>
+        </div>
+      `).join("")}
+    </div>
+    <div class="divider"></div>
+    <div class="section-title" style="margin-top:0;">Final Review</div>
+    <div class="grid grid-2">
+      <div class="field"><label>Did I follow my plan?</label><select id="rv_followedPlan"><option value="">—</option><option value="yes" ${t.review.followedPlan===true?'selected':''}>YES</option><option value="no" ${t.review.followedPlan===false?'selected':''}>NO</option></select></div>
+      <div class="field"><label>Was this a valid setup?</label><select id="rv_validSetup"><option value="">—</option><option value="yes" ${t.review.validSetup===true?'selected':''}>YES</option><option value="no" ${t.review.validSetup===false?'selected':''}>NO</option></select></div>
+    </div>
+    <div class="field"><label>What did I learn?</label><textarea id="rv_lesson">${esc(t.review.lesson)}</textarea></div>
+    <div class="field"><label>What will I do differently next time?</label><textarea id="rv_nextTime">${esc(t.review.nextTime)}</textarea></div>
+    <div class="field"><label>Notes</label><textarea id="rv_notes">${esc(t.notes)}</textarea></div>
+    <div class="card" style="background:var(--bg-2);"><b>Preview classification:</b> ${classificationBadgePreview(t)}</div>
+  `;
+  ["contextScore","frameworkScore","entryScore","riskScore","managementScore"].forEach(k => {
+    document.getElementById("es_" + k).oninput = e => {
+      let v = Math.max(0, Math.min(20, Number(e.target.value) || 0));
+      t.executionReview[k] = v;
+      document.getElementById("es_total").textContent = computeExecutionTotal(t.executionReview) + " / 100";
+      refreshPreview(t);
+    };
+  });
+  document.getElementById("es_ruleBreak").onchange = e => { t.executionReview.ruleBreak = e.target.value; refreshPreview(t); };
+  document.getElementById("es_ruleDesc").oninput = e => t.executionReview.ruleBreakDescription = e.target.value;
+  ["Before","During","After"].forEach(period => {
+    document.querySelectorAll("#psych" + period + " .chip").forEach(chip => {
+      chip.onclick = () => {
+        const arr = t.psychology[period.toLowerCase()];
+        const s = chip.dataset.s;
+        const idx = arr.indexOf(s);
+        if (idx >= 0) arr.splice(idx, 1); else arr.push(s);
+        chip.classList.toggle("selected");
+      };
+    });
+  });
+  document.getElementById("emoControl").oninput = e => t.psychology.emotionalControl = Number(e.target.value);
+  ["before","entry","after"].forEach(k => {
+    document.getElementById("shot_" + k).onchange = async e => {
+      const file = e.target.files[0];
+      if (file) { t.screenshots[k] = await readFileAsDataURL(file); renderReviewStep(body, t); }
+    };
+  });
+  document.getElementById("rv_followedPlan").onchange = e => t.review.followedPlan = e.target.value === "" ? null : e.target.value === "yes";
+  document.getElementById("rv_validSetup").onchange = e => { t.review.validSetup = e.target.value === "" ? null : e.target.value === "yes"; refreshPreview(t); };
+  document.getElementById("rv_lesson").oninput = e => t.review.lesson = e.target.value;
+  document.getElementById("rv_nextTime").oninput = e => t.review.nextTime = e.target.value;
+  document.getElementById("rv_notes").oninput = e => t.notes = e.target.value;
+}
+function refreshPreview(t) {
+  const el = document.querySelector("#wizardBody .card b");
+  if (!el) return;
+  el.parentElement.innerHTML = `<b>Preview classification:</b> ${classificationBadgePreview(t)}`;
+}
+function classificationBadgePreview(t) {
+  const clone = JSON.parse(JSON.stringify(t));
+  deriveTrade(clone);
+  return classificationBadge(clone);
+}
+
+async function saveWizardTrade() {
+  if (!wizardTrade.accountId) {
+    toast("Please select an Account before saving.");
+    wizardStep = 0; renderWizardSteps(); renderWizardStepBody();
+    return;
+  }
+  deriveTrade(wizardTrade);
+  await persistTrade(wizardTrade);
+  toast("Trade saved to Journal.");
+  wizardTrade = null; wizardEditingId = null; wizardStep = 0;
+  location.hash = "#/journal";
+}
+async function persistTrade(trade) {
+  deriveTrade(trade);
+  await idbPut("trades", trade);
+  const idx = TRADES.findIndex(t => t.tradeId === trade.tradeId);
+  if (idx >= 0) TRADES[idx] = trade; else TRADES.push(trade);
+}
+
+/* ---------------------------------------------------------------------
+   10. JOURNAL
+   --------------------------------------------------------------------- */
+let journalFilters = { account: "", session: "", instrument: "", direction: "", bias: "", trigger: "", frameworkValid: "", classification: "", search: "", from: "", to: "" };
+let journalSort = { key: "date", dir: "desc" };
+
+function applyJournalFilters(list) {
+  return list.filter(t => {
+    if (journalFilters.account && t.accountId !== journalFilters.account) return false;
+    if (journalFilters.session && t.session !== journalFilters.session) return false;
+    if (journalFilters.instrument && !t.instrument.toLowerCase().includes(journalFilters.instrument.toLowerCase())) return false;
+    if (journalFilters.direction && t.direction !== journalFilters.direction) return false;
+    if (journalFilters.bias && t.framework.bias !== journalFilters.bias) return false;
+    if (journalFilters.trigger && t.framework.trigger !== journalFilters.trigger) return false;
+    if (journalFilters.frameworkValid === "valid" && t.review.validSetup !== true) return false;
+    if (journalFilters.frameworkValid === "invalid" && t.review.validSetup !== false) return false;
+    if (journalFilters.classification && t.classification.label !== journalFilters.classification) return false;
+    if (journalFilters.from && t.date < journalFilters.from) return false;
+    if (journalFilters.to && t.date > journalFilters.to) return false;
+    if (journalFilters.search) {
+      const s = journalFilters.search.toLowerCase();
+      const hay = [t.instrument, t.notes, t.review.lesson, t.review.nextTime].join(" ").toLowerCase();
+      if (!hay.includes(s)) return false;
+    }
+    return true;
+  });
+}
+
+function renderJournal(main) {
+  let list = applyJournalFilters(TRADES);
+  list.sort((a, b) => {
+    let av, bv;
+    if (journalSort.key === "date") { av = a.date + "T" + (a.time||""); bv = b.date + "T" + (b.time||""); }
+    else if (journalSort.key === "r") { av = Number(a.management.finalR)||0; bv = Number(b.management.finalR)||0; }
+    else if (journalSort.key === "score") { av = a.executionReview.totalScore||0; bv = b.executionReview.totalScore||0; }
+    else { av = a[journalSort.key]; bv = b[journalSort.key]; }
+    if (av < bv) return journalSort.dir === "asc" ? -1 : 1;
+    if (av > bv) return journalSort.dir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  main.innerHTML = `
+    <h1 class="page-title">Journal</h1>
+    <p class="page-sub">Your complete trade database — search, filter, sort.</p>
+    <div class="filters-bar card">
+      <select id="jf_account"><option value="">All Accounts</option>${ACCOUNTS.map(a=>`<option value="${a.id}" ${journalFilters.account===a.id?'selected':''}>${esc(a.name)}${a.archived?' (archived)':''}</option>`).join("")}</select>
+      <input type="text" id="jf_search" placeholder="Search notes / lessons..." value="${esc(journalFilters.search)}">
+      <input type="date" id="jf_from" value="${journalFilters.from}">
+      <input type="date" id="jf_to" value="${journalFilters.to}">
+      <select id="jf_session"><option value="">Session</option>${SESSIONS.map(s=>`<option ${journalFilters.session===s?'selected':''}>${s}</option>`).join("")}</select>
+      <input type="text" id="jf_instrument" placeholder="Instrument" value="${esc(journalFilters.instrument)}">
+      <select id="jf_direction"><option value="">Direction</option><option ${journalFilters.direction==='Long'?'selected':''}>Long</option><option ${journalFilters.direction==='Short'?'selected':''}>Short</option></select>
+      <select id="jf_bias"><option value="">Bias</option>${FRAMEWORK.biasOptions.map(b=>`<option ${journalFilters.bias===b?'selected':''}>${esc(b)}</option>`).join("")}</select>
+      <select id="jf_trigger"><option value="">Trigger</option>${FRAMEWORK.triggers.map(tr=>`<option ${journalFilters.trigger===tr.label?'selected':''}>${esc(tr.label)}</option>`).join("")}</select>
+      <select id="jf_valid"><option value="">Framework Valid?</option><option value="valid" ${journalFilters.frameworkValid==='valid'?'selected':''}>Valid</option><option value="invalid" ${journalFilters.frameworkValid==='invalid'?'selected':''}>Invalid</option></select>
+      <select id="jf_class"><option value="">Classification</option>${["GOOD WIN","GOOD LOSS","BAD WIN","BAD LOSS","BREAKEVEN","PENDING"].map(c=>`<option ${journalFilters.classification===c?'selected':''}>${c}</option>`).join("")}</select>
+      <button class="btn sm" id="jf_clear">Clear</button>
+    </div>
+    <div class="card" style="padding:0;overflow-x:auto;">
+      ${list.length === 0 ? '<div class="empty-state"><div class="big">No trades match.</div>Adjust filters or log your first trade.</div>' : `
+      <table>
+        <thead><tr>
+          <th data-k="date" class="sortable">Date</th><th>Account</th><th>Session</th><th>Instrument</th><th>Direction</th><th>Bias</th><th>Trigger</th><th>Result</th>
+          <th data-k="r" class="sortable">R</th><th>P&amp;L</th><th data-k="score" class="sortable">Execution</th><th>FW Valid</th><th>Rule Break</th>
+        </tr></thead>
+        <tbody>
+        ${list.map(t => `
+          <tr class="rowlink" data-id="${t.tradeId}">
+            <td>${esc(t.date)}</td><td>${esc(resolveAccountName(t.accountId))}</td><td>${esc(t.session)}</td><td>${esc(t.instrument)}</td><td>${esc(t.direction)}</td>
+            <td>${esc(t.framework.bias)}</td><td style="white-space:normal;">${esc(t.framework.trigger)}</td>
+            <td>${classificationBadge(t)}</td>
+            <td class="${Number(t.management.finalR)>0?'pos':(Number(t.management.finalR)<0?'neg':'')}">${fmtR(t.management.finalR)}</td>
+            <td class="${Number(t.management.finalPnL)>0?'pos':(Number(t.management.finalPnL)<0?'neg':'')}">${fmtCurrency(t.management.finalPnL)}</td>
+            <td>${t.executionReview.totalScore ?? '—'}</td>
+            <td>${t.review.validSetup === true ? '✓' : (t.review.validSetup === false ? '✕' : '—')}</td>
+            <td>${t.executionReview.ruleBreak === 'YES' ? '<span style="color:var(--red)">YES</span>' : 'NO'}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`}
+    </div>
+    <div style="margin-top:10px;color:var(--text-faint);font-size:12px;">${list.length} trade(s) shown of ${TRADES.length} total.</div>
+  `;
+
+  document.querySelectorAll("th.sortable").forEach(th => {
+    th.style.cursor = "pointer";
+    th.onclick = () => {
+      const k = th.dataset.k;
+      if (journalSort.key === k) journalSort.dir = journalSort.dir === "asc" ? "desc" : "asc"; else { journalSort.key = k; journalSort.dir = "desc"; }
+      renderJournal(main);
+    };
+  });
+  document.querySelectorAll("tr[data-id]").forEach(tr => { tr.onclick = () => openTradeDetail(tr.dataset.id); });
+  const bind = (id, prop) => document.getElementById(id).oninput = e => { journalFilters[prop] = e.target.value; renderJournal(main); };
+  bind("jf_search", "search"); bind("jf_from", "from"); bind("jf_to", "to"); bind("jf_instrument", "instrument");
+  const bindSel = (id, prop) => document.getElementById(id).onchange = e => { journalFilters[prop] = e.target.value; renderJournal(main); };
+  bindSel("jf_account", "account"); bindSel("jf_session", "session"); bindSel("jf_direction", "direction"); bindSel("jf_bias", "bias"); bindSel("jf_trigger", "trigger"); bindSel("jf_valid", "frameworkValid"); bindSel("jf_class", "classification");
+  document.getElementById("jf_clear").onclick = () => { journalFilters = { account: "", session: "", instrument: "", direction: "", bias: "", trigger: "", frameworkValid: "", classification: "", search: "", from: "", to: "" }; renderJournal(main); };
+}
+
+function openTradeDetail(tradeId) {
+  const t = TRADES.find(x => x.tradeId === tradeId);
+  if (!t) return;
+  const root = document.getElementById("modal-root");
+  const shots = ["before","entry","after"].filter(k => t.screenshots[k]);
+  root.innerHTML = `
+    <div class="modal-backdrop" id="detailBackdrop">
+      <div class="modal">
+        <div class="modal-head"><h2>${esc(t.date)} · ${esc(t.instrument)} · ${esc(t.direction)}</h2><button class="close-x" id="closeDetail">&times;</button></div>
+        <div class="two-col">
+          <div>
+            <div class="kv"><span class="k">Account</span><span class="v">${esc(resolveAccountName(t.accountId))}</span></div>
+            <div class="kv"><span class="k">Session</span><span class="v">${esc(t.session)}</span></div>
+            <div class="kv"><span class="k">Bias</span><span class="v">${esc(t.framework.bias)}</span></div>
+            <div class="kv"><span class="k">Trigger</span><span class="v">${esc(t.framework.trigger)}</span></div>
+            <div class="kv"><span class="k">Market Condition</span><span class="v">${esc(t.marketContext.marketCondition)||'—'}</span></div>
+            <div class="kv"><span class="k">Entry / SL / Target</span><span class="v">${esc(t.execution.entry)} / ${esc(t.execution.stopLoss)} / ${esc(t.execution.target)}</span></div>
+            <div class="kv"><span class="k">Contracts</span><span class="v">${esc(t.execution.contracts)}</span></div>
+            <div class="kv"><span class="k">Risk ($)</span><span class="v">${fmtCurrency(t.execution.risk)}</span></div>
+            <div class="kv"><span class="k">Planned R:R</span><span class="v">${esc(t.execution.plannedRR)}</span></div>
+          </div>
+          <div>
+            <div class="kv"><span class="k">Exit Type</span><span class="v">${esc(t.management.exitType)||'—'}</span></div>
+            <div class="kv"><span class="k">Final P&amp;L</span><span class="v">${fmtCurrency(t.management.finalPnL)}</span></div>
+            <div class="kv"><span class="k">Final R</span><span class="v">${fmtR(t.management.finalR)}</span></div>
+            <div class="kv"><span class="k">MFE / MAE</span><span class="v">${esc(t.management.mfe)||'—'} / ${esc(t.management.mae)||'—'}</span></div>
+            <div class="kv"><span class="k">Execution Score</span><span class="v">${t.executionReview.totalScore} / 100</span></div>
+            <div class="kv"><span class="k">Rule Break</span><span class="v">${esc(t.executionReview.ruleBreak)}</span></div>
+            <div class="kv"><span class="k">Classification</span><span class="v">${classificationBadge(t)}</span></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div><b>Confirmation checks</b><div class="framework-box" style="margin-top:6px;">${renderChecksReadonly(t.framework.bias ? FRAMEWORK.confirmations[t.framework.bias]?.checks : [], t.framework.confirmationChecks)}</div></div>
+        <div style="margin-top:12px;"><b>Trigger checks</b><div class="framework-box" style="margin-top:6px;">${renderChecksReadonly(FRAMEWORK.triggers.find(x=>x.label===t.framework.trigger)?.checks || [], t.framework.triggerChecks)}</div></div>
+        <div class="divider"></div>
+        <div class="kv"><span class="k">Followed plan?</span><span class="v">${t.review.followedPlan===true?'YES':t.review.followedPlan===false?'NO':'—'}</span></div>
+        <div class="kv"><span class="k">Valid setup?</span><span class="v">${t.review.validSetup===true?'YES':t.review.validSetup===false?'NO':'—'}</span></div>
+        <p><b>Lesson:</b> ${esc(t.review.lesson) || '—'}</p>
+        <p><b>Next time:</b> ${esc(t.review.nextTime) || '—'}</p>
+        <p><b>Notes:</b> ${esc(t.notes) || '—'}</p>
+        ${shots.length ? `<div><b>Screenshots</b><div class="thumb-row">${shots.map(k => `<img class="thumb" style="width:120px;height:120px;" src="${t.screenshots[k]}" title="${k}">`).join("")}</div></div>` : ""}
+        <div class="divider"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn danger" id="deleteTradeBtn">Delete</button>
+          <button class="btn primary" id="editTradeBtn">Edit</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById("closeDetail").onclick = () => root.innerHTML = "";
+  document.getElementById("detailBackdrop").onclick = e => { if (e.target.id === "detailBackdrop") root.innerHTML = ""; };
+  document.getElementById("editTradeBtn").onclick = () => { root.innerHTML = ""; wizardTrade = null; location.hash = "#/edit-trade/" + t.tradeId; };
+  document.getElementById("deleteTradeBtn").onclick = async () => {
+    if (confirm("Delete this trade permanently? This cannot be undone.")) {
+      await idbDelete("trades", t.tradeId);
+      TRADES = TRADES.filter(x => x.tradeId !== t.tradeId);
+      root.innerHTML = "";
+      router();
+      toast("Trade deleted.");
+    }
+  };
+}
+function renderChecksReadonly(checks, values) {
+  if (!checks || !checks.length) return '<div class="hint">—</div>';
+  return checks.map(c => `<div class="check-row"><input type="checkbox" disabled ${values[c.id] ? 'checked' : ''}><label>${esc(c.label)}</label></div>`).join("");
+}
+
+/* ---------------------------------------------------------------------
+   11. ANALYTICS
+   --------------------------------------------------------------------- */
+let edgeMatrixDims = ["bias", "session"];
+let analyticsAccountId = "";
+
+function renderAnalytics(main) {
+  const aTrades = analyticsAccountId ? TRADES.filter(t => t.accountId === analyticsAccountId) : TRADES;
+  const stats = computeAggregateStats(aTrades);
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h1 class="page-title">Analytics</h1>
+        <p class="page-sub">ค้นหา Edge ของฉัน — where do I actually have an advantage?</p>
+      </div>
+      <div class="field" style="min-width:200px;margin-bottom:0;">
+        <label>Account</label>
+        <select id="analyticsAccountFilter">
+          <option value="">All Accounts</option>
+          ${ACCOUNTS.map(a => `<option value="${a.id}" ${analyticsAccountId===a.id?'selected':''}>${esc(a.name)}${a.archived?' (archived)':''}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+
+    <div class="grid grid-4">
+      <div class="card stat-card"><div class="stat-label">Expectancy</div><div class="stat-value ${stats.expectancy>=0?'pos':'neg'}">${fmtR(stats.expectancy)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Average R</div><div class="stat-value ${stats.avgR>=0?'pos':'neg'}">${fmtR(stats.avgR)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Win Rate</div><div class="stat-value">${fmtPct(stats.winRate)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Average Win / Loss (R)</div><div class="stat-value">${fmtR(stats.avgWinR)} / -${fmtNum(stats.avgLossR)}R</div></div>
+      <div class="card stat-card"><div class="stat-label">Profit Factor</div><div class="stat-value">${fmtPF(stats.profitFactor)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Max Drawdown (R)</div><div class="stat-value neg">${fmtNum(stats.maxDrawdownR)}R</div></div>
+      <div class="card stat-card"><div class="stat-label">Avg Execution Score</div><div class="stat-value">${fmtNum(stats.avgExecution,1)}</div></div>
+      <div class="card stat-card"><div class="stat-label">Framework Compliance</div><div class="stat-value">${fmtPct(stats.frameworkCompliance)}</div></div>
+    </div>
+
+    <div class="section-title">Edge by Bias</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.bias.fn))}</div>
+
+    <div class="section-title">Edge by Trigger</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.trigger.fn))}</div>
+
+    <div class="section-title">Edge by Session</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.session.fn))}</div>
+
+    <div class="section-title">Edge by Day of Week</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.dayOfWeek.fn), ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"])}</div>
+
+    <div class="section-title">Edge by Market Condition</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.marketCondition.fn))}</div>
+
+    <div class="section-title">Edge by Direction</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.direction.fn))}</div>
+
+    <div class="section-title">Edge by Execution Score Bucket</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.executionBucket.fn), ["90–100","80–89","70–79","60–69","Below 60"])}</div>
+
+    <div class="section-title">Good Trade vs Bad Trade</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.classification.fn), ["GOOD WIN","GOOD LOSS","BAD WIN","BAD LOSS"])}</div>
+
+    <div class="section-title">Framework Valid vs Invalid</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.frameworkValidity.fn), ["Valid","Invalid"])}</div>
+
+    <div class="section-title">Edge Matrix</div>
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px;">Combine dimensions to search for potential edges. Nothing here is labeled a confirmed "edge" — only a <b>Potential Edge</b>, and only once sample size is meaningful.</div>
+      <div class="chip-group" id="matrixDims">
+        ${Object.keys(DIMENSIONS).map(k => `<div class="chip ${edgeMatrixDims.includes(k)?'selected':''}" data-dim="${k}">${DIMENSIONS[k].label}</div>`).join("")}
+      </div>
+      <div class="divider"></div>
+      <div id="matrixResults"></div>
+    </div>
+  `;
+  document.querySelectorAll("#matrixDims .chip").forEach(chip => {
+    chip.onclick = () => {
+      const k = chip.dataset.dim;
+      const idx = edgeMatrixDims.indexOf(k);
+      if (idx >= 0) edgeMatrixDims.splice(idx, 1);
+      else if (edgeMatrixDims.length < 3) edgeMatrixDims.push(k);
+      renderAnalytics(main);
+    };
+  });
+  document.getElementById("analyticsAccountFilter").onchange = e => { analyticsAccountId = e.target.value; renderAnalytics(main); };
+  renderMatrixResults();
+}
+
+function edgeTable(groups, order) {
+  if (!groups.length) return '<div class="empty-state">No data yet.</div>';
+  if (order) groups.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+  else groups.sort((a, b) => b.stats.expectancy - a.stats.expectancy);
+  return `<table>
+    <thead><tr><th>Group</th><th>Trades</th><th>Win Rate</th><th>Avg R</th><th>Expectancy</th><th>Profit Factor</th><th>Avg Execution</th><th>Sample</th></tr></thead>
+    <tbody>
+    ${groups.map(g => `
+      <tr>
+        <td style="white-space:normal;">${esc(g.key)}</td>
+        <td>${g.trades.length}</td>
+        <td>${fmtPct(g.stats.winRate)}</td>
+        <td class="${g.stats.avgR>=0?'pos':'neg'}">${fmtR(g.stats.avgR)}</td>
+        <td class="${g.stats.expectancy>=0?'pos':'neg'}">${fmtR(g.stats.expectancy)}</td>
+        <td>${fmtPF(g.stats.profitFactor)}</td>
+        <td>${fmtNum(g.stats.avgExecution,1)}</td>
+        <td><span class="sample-tag ${g.sample.cls}">${g.sample.label} (${g.trades.length})</span></td>
+      </tr>`).join("")}
+    </tbody>
+  </table>`;
+}
+
+function renderMatrixResults() {
+  const area = document.getElementById("matrixResults");
+  if (!area) return;
+  if (!edgeMatrixDims.length) { area.innerHTML = '<div class="hint">Select 1–3 dimensions above.</div>'; return; }
+  const matrixTrades = analyticsAccountId ? TRADES.filter(t => t.accountId === analyticsAccountId) : TRADES;
+  const keyFn = t => edgeMatrixDims.map(d => DIMENSIONS[d].fn(t) || "—").join(" × ");
+  const groups = groupTrades(matrixTrades, keyFn).sort((a, b) => b.stats.expectancy - a.stats.expectancy);
+  if (!groups.length) { area.innerHTML = '<div class="empty-state">No matching data yet.</div>'; return; }
+  area.innerHTML = groups.map(g => {
+    const isUseful = g.trades.length >= 30;
+    return `
+    <div class="card" style="margin-bottom:10px;background:var(--bg-2);">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:12.5px;color:${isUseful ? 'var(--accent)' : 'var(--text-faint)'};font-weight:600;">${isUseful ? 'Potential Edge Detected' : 'Insufficient sample'}</div>
+          <div style="font-family:var(--mono);font-size:14px;margin-top:3px;">${esc(g.key)}</div>
+        </div>
+        <span class="sample-tag ${g.sample.cls}">Sample Size: ${g.trades.length} · ${g.sample.label}</span>
+      </div>
+      <div class="grid grid-4" style="margin-top:10px;">
+        <div class="kv"><span class="k">Win Rate</span><span class="v">${fmtPct(g.stats.winRate)}</span></div>
+        <div class="kv"><span class="k">Expectancy</span><span class="v ${g.stats.expectancy>=0?'pos':'neg'}">${fmtR(g.stats.expectancy)}</span></div>
+        <div class="kv"><span class="k">Profit Factor</span><span class="v">${fmtPF(g.stats.profitFactor)}</span></div>
+        <div class="kv"><span class="k">Avg Execution</span><span class="v">${fmtNum(g.stats.avgExecution,1)}</span></div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------------------------------------------------------------------
+   12. REVIEW
+   --------------------------------------------------------------------- */
+let reviewTab = "weekly";
+let reviewAccountId = "";
+function renderReview(main) {
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h1 class="page-title">Review</h1>
+        <p class="page-sub">Turn history into decisions — never automatic changes to the Framework.</p>
+      </div>
+      <div class="field" style="min-width:200px;margin-bottom:0;">
+        <label>Account</label>
+        <select id="reviewAccountFilter">
+          <option value="">All Accounts</option>
+          ${ACCOUNTS.map(a => `<option value="${a.id}" ${reviewAccountId===a.id?'selected':''}>${esc(a.name)}${a.archived?' (archived)':''}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="tabs" id="reviewTabs">
+      <div class="tab ${reviewTab==='daily'?'active':''}" data-t="daily">Daily</div>
+      <div class="tab ${reviewTab==='weekly'?'active':''}" data-t="weekly">Weekly</div>
+      <div class="tab ${reviewTab==='monthly'?'active':''}" data-t="monthly">Monthly</div>
+    </div>
+    <div id="reviewBody"></div>
+  `;
+  document.querySelectorAll("#reviewTabs .tab").forEach(tabEl => {
+    tabEl.onclick = () => { reviewTab = tabEl.dataset.t; renderReview(main); };
+  });
+  document.getElementById("reviewAccountFilter").onchange = e => { reviewAccountId = e.target.value; renderReview(main); };
+  const body = document.getElementById("reviewBody");
+  if (reviewTab === "daily") renderPeriodReview(body, "daily");
+  else if (reviewTab === "weekly") renderPeriodReview(body, "weekly");
+  else renderPeriodReview(body, "monthly");
+}
+
+function periodBounds(period) {
+  const now = new Date();
+  let start;
+  if (period === "daily") { start = new Date(now); start.setHours(0,0,0,0); }
+  else if (period === "weekly") { start = new Date(now); const day = start.getDay(); const diff = (day === 0 ? -6 : 1) - day; start.setDate(start.getDate() + diff); start.setHours(0,0,0,0); }
+  else { start = new Date(now.getFullYear(), now.getMonth(), 1); }
+  return { start: start.toISOString().slice(0,10), end: todayISO() };
+}
+
+function renderPeriodReview(body, period) {
+  const { start, end } = periodBounds(period);
+  const scoped = reviewAccountId ? TRADES.filter(t => t.accountId === reviewAccountId) : TRADES;
+  const inPeriod = scoped.filter(t => t.date >= start && t.date <= end);
+  const stats = computeAggregateStats(inPeriod);
+  const ruleBreaks = inPeriod.filter(t => t.executionReview.ruleBreak === "YES").length;
+
+  const bestWorst = (dim) => {
+    const groups = groupTrades(inPeriod, DIMENSIONS[dim].fn).filter(g => g.trades.length >= 1);
+    if (!groups.length) return { best: null, worst: null };
+    const sorted = [...groups].sort((a,b) => b.stats.expectancy - a.stats.expectancy);
+    return { best: sorted[0], worst: sorted[sorted.length - 1] };
+  };
+  const biasBW = bestWorst("bias"), triggerBW = bestWorst("trigger"), sessionBW = bestWorst("session"), mcBW = bestWorst("marketCondition");
+
+  const pastReviews = REVIEWS.filter(r => r.period === period).sort((a,b) => b.savedAt.localeCompare(a.savedAt));
+
+  body.innerHTML = `
+    <div class="card">
+      <div class="hint" style="margin-bottom:10px;">Period: ${esc(start)} → ${esc(end)}</div>
+      <div class="grid grid-4">
+        <div class="kv"><span class="k">Total Trades</span><span class="v">${stats.totalTrades}</span></div>
+        <div class="kv"><span class="k">Net P&amp;L</span><span class="v">${fmtCurrency(stats.netPnL)}</span></div>
+        <div class="kv"><span class="k">Net R</span><span class="v">${fmtR(stats.netR)}</span></div>
+        <div class="kv"><span class="k">Win Rate</span><span class="v">${fmtPct(stats.winRate)}</span></div>
+        <div class="kv"><span class="k">Avg Win / Loss (R)</span><span class="v">${fmtR(stats.avgWinR)} / -${fmtNum(stats.avgLossR)}R</span></div>
+        <div class="kv"><span class="k">Expectancy</span><span class="v">${fmtR(stats.expectancy)}</span></div>
+        <div class="kv"><span class="k">Profit Factor</span><span class="v">${fmtPF(stats.profitFactor)}</span></div>
+        <div class="kv"><span class="k">Max Drawdown (R)</span><span class="v">${fmtNum(stats.maxDrawdownR)}R</span></div>
+        <div class="kv"><span class="k">Avg Execution</span><span class="v">${fmtNum(stats.avgExecution,1)}</span></div>
+        <div class="kv"><span class="k">Framework Compliance</span><span class="v">${fmtPct(stats.frameworkCompliance)}</span></div>
+        <div class="kv"><span class="k">Rule Breaks</span><span class="v">${ruleBreaks}</span></div>
+      </div>
+    </div>
+
+    <div class="section-title">Best Historical Performance <span class="hint">(not a prediction)</span></div>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="kv"><span class="k">Best Bias</span><span class="v">${biasBW.best ? esc(biasBW.best.key) : '—'}</span></div>
+        <div class="kv"><span class="k">Best Trigger</span><span class="v">${triggerBW.best ? esc(triggerBW.best.key) : '—'}</span></div>
+        <div class="kv"><span class="k">Best Session</span><span class="v">${sessionBW.best ? esc(sessionBW.best.key) : '—'}</span></div>
+        <div class="kv"><span class="k">Best Market Condition</span><span class="v">${mcBW.best ? esc(mcBW.best.key) : '—'}</span></div>
+      </div>
+      <div class="card">
+        <div class="kv"><span class="k">Worst Bias</span><span class="v">${biasBW.worst ? esc(biasBW.worst.key) : '—'}</span></div>
+        <div class="kv"><span class="k">Worst Trigger</span><span class="v">${triggerBW.worst ? esc(triggerBW.worst.key) : '—'}</span></div>
+        <div class="kv"><span class="k">Worst Session</span><span class="v">${sessionBW.worst ? esc(sessionBW.worst.key) : '—'}</span></div>
+        <div class="kv"><span class="k">Worst Market Condition</span><span class="v">${mcBW.worst ? esc(mcBW.worst.key) : '—'}</span></div>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:8px;">Findings are informational. The system never auto-modifies your Framework — you decide whether to keep, modify, backtest, or remove anything.</div>
+
+    <div class="section-title">${period.charAt(0).toUpperCase()+period.slice(1)} Reflection</div>
+    <div class="card">
+      <div class="field"><label>What worked?</label><textarea id="rv_worked"></textarea></div>
+      <div class="field"><label>What failed?</label><textarea id="rv_failed"></textarea></div>
+      <div class="field"><label>What did I learn?</label><textarea id="rv_learned"></textarea></div>
+      <div class="field"><label>What will I change next ${period === 'daily' ? 'day' : period === 'weekly' ? 'week' : 'month'}?</label><textarea id="rv_change"></textarea></div>
+      <button class="btn primary" id="saveReviewBtn">Save ${period.charAt(0).toUpperCase()+period.slice(1)} Review</button>
+    </div>
+
+    ${pastReviews.length ? `
+    <div class="section-title">Saved Reviews</div>
+    ${pastReviews.map(r => `
+      <div class="card" style="margin-bottom:10px;">
+        <div class="hint">${esc(r.start)} → ${esc(r.end)} · saved ${new Date(r.savedAt).toLocaleString()}</div>
+        <p><b>Worked:</b> ${esc(r.worked)||'—'}</p>
+        <p><b>Failed:</b> ${esc(r.failed)||'—'}</p>
+        <p><b>Learned:</b> ${esc(r.learned)||'—'}</p>
+        <p><b>Change:</b> ${esc(r.change)||'—'}</p>
+      </div>
+    `).join("")}` : ""}
+  `;
+
+  document.getElementById("saveReviewBtn").onclick = async () => {
+    const review = {
+      id: uuid(), period, start, end, savedAt: new Date().toISOString(),
+      worked: document.getElementById("rv_worked").value,
+      failed: document.getElementById("rv_failed").value,
+      learned: document.getElementById("rv_learned").value,
+      change: document.getElementById("rv_change").value,
+      stats
+    };
+    await idbPut("weeklyReviews", review);
+    REVIEWS.push(review);
+    toast("Review saved.");
+    renderReview(document.getElementById("main-content"));
+  };
+}
+
+/* ---------------------------------------------------------------------
+   13. PLAYBOOK
+   --------------------------------------------------------------------- */
+function renderPlaybook(main) {
+  main.innerHTML = `
+    <h1 class="page-title">Playbook</h1>
+    <p class="page-sub">Turn discovered patterns back into a repeatable plan — this never alters your raw Journal data.</p>
+    <button class="btn primary" id="newPlaybookBtn" style="margin-bottom:16px;">+ New Setup</button>
+    <div id="playbookList" class="grid grid-2"></div>
+  `;
+  document.getElementById("newPlaybookBtn").onclick = () => openPlaybookEditor(null);
+  renderPlaybookList();
+}
+function renderPlaybookList() {
+  const list = document.getElementById("playbookList");
+  const active = PLAYBOOKS.filter(p => !p.archived);
+  const archived = PLAYBOOKS.filter(p => p.archived);
+  if (!PLAYBOOKS.length) { list.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">No playbook setups yet. Discover a pattern in Analytics, then codify it here.</div>'; return; }
+  list.innerHTML = [...active, ...archived].map(p => `
+    <div class="card" style="opacity:${p.archived ? 0.55 : 1};">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div style="font-weight:600;font-size:14.5px;">${esc(p.setupName)} ${p.archived ? '<span class="hint">(archived)</span>' : ''}</div>
+          <div class="hint">${esc(p.bias)} · ${esc(p.trigger)}</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn sm" data-act="edit" data-id="${p.id}">Edit</button>
+          <button class="btn sm" data-act="dup" data-id="${p.id}">Duplicate</button>
+          <button class="btn sm" data-act="arch" data-id="${p.id}">${p.archived ? 'Unarchive' : 'Archive'}</button>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <p style="font-size:12.5px;color:var(--text-dim);">${esc(p.description) || '—'}</p>
+      <div class="grid grid-3">
+        <div class="kv"><span class="k">Best Session</span><span class="v">${esc(p.bestSession)||'—'}</span></div>
+        <div class="kv"><span class="k">Best Day</span><span class="v">${esc(p.bestDay)||'—'}</span></div>
+        <div class="kv"><span class="k">Sample</span><span class="v">${esc(p.sampleSize)||'—'}</span></div>
+        <div class="kv"><span class="k">Win Rate</span><span class="v">${esc(p.winRate)||'—'}</span></div>
+        <div class="kv"><span class="k">Expectancy</span><span class="v">${esc(p.expectancy)||'—'}</span></div>
+        <div class="kv"><span class="k">Best Condition</span><span class="v">${esc(p.bestMarketCondition)||'—'}</span></div>
+      </div>
+    </div>
+  `).join("");
+  list.querySelectorAll("button[data-act]").forEach(btn => {
+    btn.onclick = async () => {
+      const p = PLAYBOOKS.find(x => x.id === btn.dataset.id);
+      if (btn.dataset.act === "edit") openPlaybookEditor(p);
+      else if (btn.dataset.act === "dup") {
+        const copy = JSON.parse(JSON.stringify(p)); copy.id = uuid(); copy.setupName += " (copy)"; copy.archived = false;
+        await idbPut("playbook", copy); PLAYBOOKS.push(copy); renderPlaybookList();
+      } else if (btn.dataset.act === "arch") {
+        p.archived = !p.archived; await idbPut("playbook", p); renderPlaybookList();
+      }
+    };
+  });
+}
+function openPlaybookEditor(p) {
+  const editing = !!p;
+  const draft = p ? JSON.parse(JSON.stringify(p)) : {
+    id: uuid(), setupName: "", bias: "", confirmation: "", trigger: "", entryModel: "", riskModel: "",
+    managementModel: "", invalidation: "", bestHistoricalConditions: "", historicalStatistics: "",
+    notes: "", bestSession: "", bestDay: "", bestMarketCondition: "", sampleSize: "", expectancy: "", winRate: "", archived: false
+  };
+  const root = document.getElementById("modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="pbBackdrop">
+      <div class="modal">
+        <div class="modal-head"><h2>${editing ? 'Edit Setup' : 'New Setup'}</h2><button class="close-x" id="pbClose">&times;</button></div>
+        <div class="grid grid-2">
+          <div class="field"><label>Setup Name</label><input type="text" id="pb_name" value="${esc(draft.setupName)}"></div>
+          <div class="field"><label>Bias</label><select id="pb_bias"><option value=""></option>${FRAMEWORK.biasOptions.map(b=>`<option ${draft.bias===b?'selected':''}>${esc(b)}</option>`).join("")}</select></div>
+          <div class="field"><label>Confirmation</label><input type="text" id="pb_conf" value="${esc(draft.confirmation)}"></div>
+          <div class="field"><label>Trigger</label><select id="pb_trigger"><option value=""></option>${FRAMEWORK.triggers.map(t=>`<option ${draft.trigger===t.label?'selected':''}>${esc(t.label)}</option>`).join("")}</select></div>
+          <div class="field"><label>Entry Model</label><input type="text" id="pb_entry" value="${esc(draft.entryModel)}"></div>
+          <div class="field"><label>Risk Model</label><input type="text" id="pb_risk" value="${esc(draft.riskModel)}"></div>
+          <div class="field"><label>Management Model</label><input type="text" id="pb_mgmt" value="${esc(draft.managementModel)}"></div>
+          <div class="field"><label>Invalidation</label><input type="text" id="pb_invalid" value="${esc(draft.invalidation)}"></div>
+          <div class="field"><label>Best Session</label><select id="pb_bestSession"><option value=""></option>${SESSIONS.map(s=>`<option ${draft.bestSession===s?'selected':''}>${s}</option>`).join("")}</select></div>
+          <div class="field"><label>Best Day</label><select id="pb_bestDay"><option value=""></option>${["Monday","Tuesday","Wednesday","Thursday","Friday"].map(d=>`<option ${draft.bestDay===d?'selected':''}>${d}</option>`).join("")}</select></div>
+          <div class="field"><label>Best Market Condition</label><select id="pb_bestCond"><option value=""></option>${MARKET_CONDITIONS.map(m=>`<option ${draft.bestMarketCondition===m?'selected':''}>${m}</option>`).join("")}</select></div>
+          <div class="field"><label>Sample Size</label><input type="text" id="pb_sample" value="${esc(draft.sampleSize)}"></div>
+          <div class="field"><label>Win Rate</label><input type="text" id="pb_winrate" value="${esc(draft.winRate)}"></div>
+          <div class="field"><label>Expectancy</label><input type="text" id="pb_expectancy" value="${esc(draft.expectancy)}"></div>
+        </div>
+        <div class="field"><label>Description</label><textarea id="pb_description">${esc(draft.description||'')}</textarea></div>
+        <div class="field"><label>Historical Statistics (free text)</label><textarea id="pb_histstats">${esc(draft.historicalStatistics)}</textarea></div>
+        <div class="field"><label>Notes</label><textarea id="pb_notes">${esc(draft.notes)}</textarea></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn" id="pbCancel">Cancel</button>
+          <button class="btn primary" id="pbSave">Save Setup</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const close = () => root.innerHTML = "";
+  document.getElementById("pbClose").onclick = close;
+  document.getElementById("pbCancel").onclick = close;
+  document.getElementById("pbBackdrop").onclick = e => { if (e.target.id === "pbBackdrop") close(); };
+  document.getElementById("pbSave").onclick = async () => {
+    draft.setupName = document.getElementById("pb_name").value;
+    draft.bias = document.getElementById("pb_bias").value;
+    draft.confirmation = document.getElementById("pb_conf").value;
+    draft.trigger = document.getElementById("pb_trigger").value;
+    draft.entryModel = document.getElementById("pb_entry").value;
+    draft.riskModel = document.getElementById("pb_risk").value;
+    draft.managementModel = document.getElementById("pb_mgmt").value;
+    draft.invalidation = document.getElementById("pb_invalid").value;
+    draft.bestSession = document.getElementById("pb_bestSession").value;
+    draft.bestDay = document.getElementById("pb_bestDay").value;
+    draft.bestMarketCondition = document.getElementById("pb_bestCond").value;
+    draft.sampleSize = document.getElementById("pb_sample").value;
+    draft.winRate = document.getElementById("pb_winrate").value;
+    draft.expectancy = document.getElementById("pb_expectancy").value;
+    draft.description = document.getElementById("pb_description").value;
+    draft.historicalStatistics = document.getElementById("pb_histstats").value;
+    draft.notes = document.getElementById("pb_notes").value;
+    await idbPut("playbook", draft);
+    const idx = PLAYBOOKS.findIndex(x => x.id === draft.id);
+    if (idx >= 0) PLAYBOOKS[idx] = draft; else PLAYBOOKS.push(draft);
+    close();
+    renderPlaybookList();
+    toast("Setup saved to Playbook.");
+  };
+}
+
+/* ---------------------------------------------------------------------
+   14. SETTINGS
+   --------------------------------------------------------------------- */
+function renderSettings(main) {
+  const s = SETTINGS;
+  main.innerHTML = `
+    <h1 class="page-title">Settings</h1>
+    <p class="page-sub">All account and prop-firm parameters are editable — nothing is hard-coded.</p>
+
+    <div class="section-title" style="margin-top:0;">Accounts</div>
+    <div class="card">
+      <div id="accountsList"></div>
+      <button class="btn primary" id="addAccountBtn" style="margin-top:10px;">+ Add Account</button>
+      <p class="hint" style="margin-top:10px;">Every Trade belongs to one Account. Dashboard, Journal, Analytics, Edge Matrix, and Review can all be filtered by Account or viewed across all Accounts. All Accounts share the same Framework, Bias, Confirmation, and Trigger definitions.</p>
+    </div>
+
+    <div class="section-title">Legacy Account Defaults <span class="hint">(kept for backward compatibility — no longer used by Dashboard; manage real Accounts above)</span></div>
+    <div class="card grid grid-3">
+      <div class="field"><label>Account Name</label><input type="text" id="s_accountName" value="${esc(s.account.accountName)}"></div>
+      <div class="field"><label>Account Size ($)</label><input type="number" id="s_accountSize" value="${s.account.accountSize}"></div>
+      <div class="field"><label>Starting Balance ($)</label><input type="number" id="s_startingBalance" value="${s.account.startingBalance}"></div>
+      <div class="field"><label>Profit Target ($)</label><input type="number" id="s_profitTarget" value="${s.account.profitTarget}"></div>
+      <div class="field"><label>Max Drawdown ($)</label><input type="number" id="s_maxDrawdown" value="${s.account.maxDrawdown}"></div>
+      <div class="field"><label>Daily Loss Limit ($)</label><input type="number" id="s_dailyLossLimit" value="${s.account.dailyLossLimit}"></div>
+      <div class="field"><label>Risk Per Trade (%)</label><input type="number" step="any" id="s_riskPerTrade" value="${s.account.riskPerTrade}"></div>
+      <div class="field"><label>Default Contract</label><input type="text" id="s_defaultContract" value="${esc(s.account.defaultContract)}"></div>
+      <div class="field"><label>Default Instrument</label><input type="text" id="s_defaultInstrument" value="${esc(s.account.defaultInstrument)}"></div>
+    </div>
+
+    <div class="section-title">Journal Settings</div>
+    <div class="card grid grid-3">
+      <div class="field"><label>Default Session</label><select id="j_defaultSession">${SESSIONS.map(sess=>`<option ${s.journal.defaultSession===sess?'selected':''}>${sess}</option>`).join("")}</select></div>
+      <div class="field"><label>Default Instrument</label><input type="text" id="j_defaultInstrument" value="${esc(s.journal.defaultInstrument)}"></div>
+      <div class="field"><label>Default Risk ($)</label><input type="number" id="j_defaultRisk" value="${s.journal.defaultRisk}"></div>
+      <div class="field"><label>Default R:R</label><input type="number" step="any" id="j_defaultRR" value="${s.journal.defaultRR}"></div>
+      <div class="field"><label>Default Point Value ($/pt)</label><input type="number" step="any" id="j_pointValue" value="${s.journal.pointValue}"></div>
+      <div class="field"><label>Good Execution Threshold (score ≥)</label><input type="number" min="0" max="100" id="j_goodThreshold" value="${s.goodExecutionThreshold}"></div>
+    </div>
+
+    <div class="section-title">Risk Warnings</div>
+    <div class="card grid grid-3">
+      <div class="field"><label>Enforce Max Risk Warning</label><select id="r_enforce"><option value="0" ${!s.riskControl.enforceMaxRisk?'selected':''}>Off</option><option value="1" ${s.riskControl.enforceMaxRisk?'selected':''}>On</option></select></div>
+      <div class="field"><label>Maximum Risk ($)</label><input type="number" id="r_maxRisk" value="${s.riskControl.maxRiskAmount}"></div>
+      <div class="hint" style="align-self:center;">Warnings never block saving unless you decide to stop manually.</div>
+    </div>
+
+    <div class="section-title">Display</div>
+    <div class="card grid grid-3">
+      <div class="field"><label>Theme</label><select id="d_theme"><option value="dark" ${s.display.theme==='dark'?'selected':''}>Dark</option><option value="light" ${s.display.theme==='light'?'selected':''}>Light</option></select></div>
+      <div class="field"><label>Compact Mode</label><select id="d_compact"><option value="0" ${!s.display.compact?'selected':''}>Off</option><option value="1" ${s.display.compact?'selected':''}>On</option></select></div>
+    </div>
+
+    <button class="btn primary" id="saveSettingsBtn" style="margin:16px 0 30px 0;">Save Settings</button>
+
+    <div class="section-title" style="margin-top:0;">Data</div>
+    <div class="card">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        <button class="btn" id="exportJsonBtn">Export JSON</button>
+        <label class="btn" style="cursor:pointer;">Import / Merge JSON<input type="file" id="importJsonInput" accept="application/json" style="display:none;"></label>
+        <button class="btn" id="exportCsvBtn">Export CSV</button>
+        <button class="btn" id="backupBtn">Backup Data</button>
+        <label class="btn" style="cursor:pointer;">Restore Data (Replace All)<input type="file" id="restoreInput" accept="application/json" style="display:none;"></label>
+        <button class="btn" id="loadDemoBtn">Load Demo Data</button>
+        <button class="btn" id="removeDemoBtn">Remove Demo Data</button>
+        <button class="btn danger" id="deleteAllBtn">Delete All Data</button>
+      </div>
+      <p class="hint" style="margin-top:12px;">Everything is stored locally in this browser via IndexedDB. Export regularly if you want a portable backup or plan to switch devices/browsers.</p>
+    </div>
+  `;
+
+  document.getElementById("saveSettingsBtn").onclick = async () => {
+    s.account.accountName = document.getElementById("s_accountName").value;
+    s.account.accountSize = Number(document.getElementById("s_accountSize").value) || 0;
+    s.account.startingBalance = Number(document.getElementById("s_startingBalance").value) || 0;
+    s.account.profitTarget = Number(document.getElementById("s_profitTarget").value) || 0;
+    s.account.maxDrawdown = Number(document.getElementById("s_maxDrawdown").value) || 0;
+    s.account.dailyLossLimit = Number(document.getElementById("s_dailyLossLimit").value) || 0;
+    s.account.riskPerTrade = Number(document.getElementById("s_riskPerTrade").value) || 0;
+    s.account.defaultContract = document.getElementById("s_defaultContract").value;
+    s.account.defaultInstrument = document.getElementById("s_defaultInstrument").value;
+    s.journal.defaultSession = document.getElementById("j_defaultSession").value;
+    s.journal.defaultInstrument = document.getElementById("j_defaultInstrument").value;
+    s.journal.defaultRisk = Number(document.getElementById("j_defaultRisk").value) || 0;
+    s.journal.defaultRR = Number(document.getElementById("j_defaultRR").value) || 0;
+    s.journal.pointValue = Number(document.getElementById("j_pointValue").value) || 1;
+    s.goodExecutionThreshold = Number(document.getElementById("j_goodThreshold").value) || 70;
+    s.riskControl.enforceMaxRisk = document.getElementById("r_enforce").value === "1";
+    s.riskControl.maxRiskAmount = Number(document.getElementById("r_maxRisk").value) || 0;
+    s.display.theme = document.getElementById("d_theme").value;
+    s.display.compact = document.getElementById("d_compact").value === "1";
+    s.updatedAt = new Date().toISOString();
+    await idbPut("kv", s);
+    applyDisplaySettings();
+    toast("Settings saved.");
+  };
+
+  renderAccountsList();
+  document.getElementById("addAccountBtn").onclick = () => openAccountEditor(null);
+
+  document.getElementById("exportJsonBtn").onclick = () => {
+    const data = { formatVersion: 2, accounts: ACCOUNTS, trades: TRADES, playbook: PLAYBOOKS, weeklyReviews: REVIEWS, settings: SETTINGS, exportedAt: new Date().toISOString() };
+    downloadFile("trading-journal-export-" + todayISO() + ".json", JSON.stringify(data, null, 2), "application/json");
+  };
+  document.getElementById("backupBtn").onclick = () => document.getElementById("exportJsonBtn").click();
+
+  document.getElementById("exportCsvBtn").onclick = () => {
+    const headers = ["date","time","account","session","instrument","direction","dailyBias","marketCondition","trigger","frameworkValid","entry","stopLoss","target","contracts","risk","plannedRR","exitType","exitPrice","finalPnL","finalR","mfe","mae","contextScore","frameworkScore","entryScore","riskScore","managementScore","totalScore","ruleBreak","classification","followedPlan","validSetup","lesson","nextTime","notes"];
+    const rows = TRADES.map(t => [
+      t.date, t.time, resolveAccountName(t.accountId), t.session, t.instrument, t.direction, t.framework.bias, t.marketContext.marketCondition, t.framework.trigger,
+      t.review.validSetup, t.execution.entry, t.execution.stopLoss, t.execution.target, t.execution.contracts, t.execution.risk, t.execution.plannedRR,
+      t.management.exitType, t.management.exitPrice, t.management.finalPnL, t.management.finalR, t.management.mfe, t.management.mae,
+      t.executionReview.contextScore, t.executionReview.frameworkScore, t.executionReview.entryScore, t.executionReview.riskScore, t.executionReview.managementScore,
+      t.executionReview.totalScore, t.executionReview.ruleBreak, t.classification.label, t.review.followedPlan, t.review.validSetup, t.review.lesson, t.review.nextTime, t.notes
+    ]);
+    const csv = [headers.join(","), ...rows.map(r => r.map(csvEscape).join(","))].join("\n");
+    downloadFile("trading-journal-" + todayISO() + ".csv", csv, "text/csv");
+  };
+
+  document.getElementById("importJsonInput").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await readFileAsText(file);
+      const data = JSON.parse(text);
+      if (!Array.isArray(data.trades)) throw new Error("Missing trades array");
+      openImportPreview(data);
+    } catch (err) {
+      alert("Import failed: file is not a valid export (" + err.message + ").");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  // Restore Data is intentionally separate from Import/Merge: it is a full,
+  // destructive replacement of local data (including Accounts), matching
+  // the app's original Restore behavior — never used silently for Import.
+  document.getElementById("restoreInput").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await readFileAsText(file);
+      const data = JSON.parse(text);
+      if (!Array.isArray(data.trades)) throw new Error("Missing trades array");
+      if (!confirm("RESTORE will REPLACE all local data (Accounts, Trades, Playbook, Reviews, Settings) with the contents of this backup file. This cannot be undone. Continue?")) return;
+      await idbClear("trades"); await idbClear("playbook"); await idbClear("weeklyReviews"); await idbClear("accounts");
+      for (const t of data.trades) await idbPut("trades", t);
+      for (const p of (data.playbook || [])) await idbPut("playbook", p);
+      for (const r of (data.weeklyReviews || [])) await idbPut("weeklyReviews", r);
+      for (const a of (data.accounts || [])) await idbPut("accounts", a);
+      if (data.settings) { SETTINGS = { ...defaultSettings(), ...data.settings, key: "settings" }; await idbPut("kv", SETTINGS); }
+      await loadAllData();
+      toast("Restore complete — local data replaced.");
+      router();
+    } catch (err) {
+      alert("Restore failed: file is not a valid backup (" + err.message + ").");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  document.getElementById("loadDemoBtn").onclick = async () => {
+    if (!confirm("Load demonstration data? It will be tagged and fully removable via 'Remove Demo Data'.")) return;
+    const demo = generateDemoTrades();
+    for (const t of demo) await idbPut("trades", t);
+    await loadAllData();
+    toast("Demo data loaded.");
+    router();
+  };
+  document.getElementById("removeDemoBtn").onclick = async () => {
+    const demoTrades = TRADES.filter(t => t.isDemo);
+    if (!demoTrades.length) { toast("No demo data present."); return; }
+    if (!confirm("Remove all demo trades?")) return;
+    for (const t of demoTrades) await idbDelete("trades", t.tradeId);
+    await loadAllData();
+    toast("Demo data removed.");
+    router();
+  };
+
+  document.getElementById("deleteAllBtn").onclick = async () => {
+    if (!confirm("This will permanently delete ALL Journal, Playbook, and Review data. This cannot be undone. Continue?")) return;
+    if (!confirm("Are you absolutely sure? Type-confirm by clicking OK once more.")) return;
+    await idbClear("trades"); await idbClear("playbook"); await idbClear("weeklyReviews");
+    await loadAllData();
+    toast("All data deleted.");
+    router();
+  };
+}
+
+/* ---------------------------------------------------------------------
+   14b. ACCOUNT MANAGEMENT (list / add / edit / archive / delete-guard)
+   --------------------------------------------------------------------- */
+function renderAccountsList() {
+  const list = document.getElementById("accountsList");
+  if (!list) return;
+  if (!ACCOUNTS.length) { list.innerHTML = '<div class="empty-state">No Accounts yet. Add one to start logging Trades.</div>'; return; }
+  const active = ACCOUNTS.filter(a => !a.archived);
+  const archived = ACCOUNTS.filter(a => a.archived);
+  list.innerHTML = [...active, ...archived].map(a => {
+    const tradeCount = TRADES.filter(t => t.accountId === a.id).length;
+    return `
+    <div class="card" style="margin-bottom:10px;opacity:${a.archived ? 0.55 : 1};">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-weight:600;font-size:14.5px;">${esc(a.name)} ${a.archived ? '<span class="hint">(archived)</span>' : ''}</div>
+          <div class="hint">${fmtCurrency(a.accountSize)} · ${tradeCount} trade(s)</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn sm" data-act="edit" data-id="${a.id}">Edit</button>
+          <button class="btn sm" data-act="arch" data-id="${a.id}">${a.archived ? 'Unarchive' : 'Archive'}</button>
+          <button class="btn sm danger" data-act="del" data-id="${a.id}">Delete</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  list.querySelectorAll("button[data-act]").forEach(btn => {
+    btn.onclick = async () => {
+      const a = getAccountById(btn.dataset.id);
+      if (!a) return;
+      if (btn.dataset.act === "edit") {
+        openAccountEditor(a);
+      } else if (btn.dataset.act === "arch") {
+        await archiveAccount(a.id, !a.archived);
+        renderAccountsList();
+        toast(a.archived ? "Account archived." : "Account unarchived.");
+      } else if (btn.dataset.act === "del") {
+        const tradeCount = TRADES.filter(t => t.accountId === a.id).length;
+        if (tradeCount > 0) {
+          if (confirm(`This account contains ${tradeCount} trade(s). Trades are never deleted automatically.\n\nArchive "${a.name}" instead? (Cancel to do nothing)`)) {
+            await archiveAccount(a.id, true);
+            renderAccountsList();
+            toast("Account archived (trades preserved).");
+          }
+          return;
+        }
+        if (confirm(`Delete empty account "${a.name}"? This cannot be undone.`)) {
+          await idbDelete("accounts", a.id);
+          ACCOUNTS = ACCOUNTS.filter(x => x.id !== a.id);
+          renderAccountsList();
+          toast("Account deleted.");
+        }
+      }
+    };
+  });
+}
+
+function openAccountEditor(existing) {
+  const editing = !!existing;
+  const draft = existing ? JSON.parse(JSON.stringify(existing)) : blankAccount();
+  const root = document.getElementById("modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="accBackdrop">
+      <div class="modal">
+        <div class="modal-head"><h2>${editing ? 'Edit Account' : 'New Account'}</h2><button class="close-x" id="accClose">&times;</button></div>
+        <div class="grid grid-2">
+          <div class="field"><label>Account Name</label><input type="text" id="acc_name" value="${esc(draft.name)}"></div>
+          <div class="field"><label>Account Size ($)</label><input type="number" id="acc_size" value="${draft.accountSize}"></div>
+          <div class="field"><label>Starting Balance ($)</label><input type="number" id="acc_startBal" value="${draft.startingBalance}"></div>
+          <div class="field"><label>Profit Target ($)</label><input type="number" id="acc_target" value="${draft.profitTarget}"></div>
+          <div class="field"><label>Max Drawdown ($)</label><input type="number" id="acc_maxDD" value="${draft.maxDrawdown}"></div>
+          <div class="field"><label>Daily Loss Limit ($)</label><input type="number" id="acc_dailyLoss" value="${draft.dailyLossLimit}"></div>
+          <div class="field"><label>Risk Per Trade ($)</label><input type="number" step="any" id="acc_risk" value="${draft.riskPerTrade}"></div>
+          <div class="field"><label>Default Contract</label><input type="text" id="acc_contract" value="${esc(draft.defaultContract)}"></div>
+          <div class="field"><label>Default Instrument</label><input type="text" id="acc_instrument" value="${esc(draft.defaultInstrument)}"></div>
+        </div>
+        <div class="hint">Changing these values only affects future defaults and Dashboard display — historical Trades keep the actual values recorded at the time.</div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+          <button class="btn" id="accCancel">Cancel</button>
+          <button class="btn primary" id="accSave">Save Account</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const close = () => root.innerHTML = "";
+  document.getElementById("accClose").onclick = close;
+  document.getElementById("accCancel").onclick = close;
+  document.getElementById("accBackdrop").onclick = e => { if (e.target.id === "accBackdrop") close(); };
+  document.getElementById("accSave").onclick = async () => {
+    draft.name = document.getElementById("acc_name").value || "Untitled Account";
+    draft.accountSize = Number(document.getElementById("acc_size").value) || 0;
+    draft.startingBalance = Number(document.getElementById("acc_startBal").value) || 0;
+    draft.profitTarget = Number(document.getElementById("acc_target").value) || 0;
+    draft.maxDrawdown = Number(document.getElementById("acc_maxDD").value) || 0;
+    draft.dailyLossLimit = Number(document.getElementById("acc_dailyLoss").value) || 0;
+    draft.riskPerTrade = Number(document.getElementById("acc_risk").value) || 0;
+    draft.defaultContract = document.getElementById("acc_contract").value;
+    draft.defaultInstrument = document.getElementById("acc_instrument").value;
+    await saveAccount(draft);
+    close();
+    renderAccountsList();
+    toast(editing ? "Account updated." : "Account created.");
+  };
+}
+
+/* ---------------------------------------------------------------------
+   14c. IMPORT / MERGE (non-destructive — "new records only")
+   Rule: EXISTING ID -> KEEP LOCAL. NEW ID -> ADD. Never overwrite,
+   never delete, never touch local Settings. Restore (above) is the only
+   destructive path, and it is a separate, explicitly-labeled button.
+   --------------------------------------------------------------------- */
+function previewImport(data) {
+  const localTradeIds = new Set(TRADES.map(t => t.tradeId));
+  const localAccountIds = new Set(ACCOUNTS.map(a => a.id));
+  const importedAccountsRaw = Array.isArray(data.accounts) ? data.accounts : [];
+
+  const accountsNew = importedAccountsRaw.filter(a => a && a.id && !localAccountIds.has(a.id));
+  const accountsExistingCount = importedAccountsRaw.filter(a => a && a.id && localAccountIds.has(a.id)).length;
+  const nameCollisions = accountsNew.filter(a => ACCOUNTS.some(local => local.name === a.name));
+
+  // De-duplicate trades *within the file itself* by tradeId.
+  const seen = new Set();
+  const deduped = [];
+  let duplicatesInFile = 0, invalidTrades = 0;
+  (data.trades || []).forEach(t => {
+    if (!t || !t.tradeId) { invalidTrades++; return; }
+    if (seen.has(t.tradeId)) { duplicatesInFile++; return; }
+    seen.add(t.tradeId);
+    deduped.push(t);
+  });
+
+  const resolvableAccountIds = new Set([...localAccountIds, ...accountsNew.map(a => a.id)]);
+  const tradesNew = [];
+  const legacyNoAccount = [];
+  let tradesExisting = 0;
+  deduped.forEach(t => {
+    if (localTradeIds.has(t.tradeId)) { tradesExisting++; return; }
+    if (t.accountId && resolvableAccountIds.has(t.accountId)) tradesNew.push(t);
+    else legacyNoAccount.push(t);
+  });
+
+  return { accountsNew, accountsExistingCount, nameCollisions, tradesNew, legacyNoAccount, tradesExisting, duplicatesInFile, invalidTrades };
+}
+
+function openImportPreview(data) {
+  const preview = previewImport(data);
+  const root = document.getElementById("modal-root");
+  const totalNew = preview.tradesNew.length + preview.legacyNoAccount.length;
+  const activeAccounts = getActiveAccounts();
+  root.innerHTML = `
+    <div class="modal-backdrop" id="impBackdrop">
+      <div class="modal">
+        <div class="modal-head"><h2>Import / Merge Preview</h2><button class="close-x" id="impClose">&times;</button></div>
+        <div class="grid grid-2">
+          <div class="kv"><span class="k">Current data</span><span class="v">${TRADES.length} trade(s), ${ACCOUNTS.length} account(s)</span></div>
+          <div class="kv"><span class="k">Imported file</span><span class="v">${(data.trades||[]).length} trade(s), ${(data.accounts||[]).length} account(s)</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="kv"><span class="k">Accounts — new</span><span class="v pos">${preview.accountsNew.length}</span></div>
+        <div class="kv"><span class="k">Accounts — already exist locally</span><span class="v">${preview.accountsExistingCount}</span></div>
+        <div class="kv"><span class="k">Trades — new</span><span class="v pos">${totalNew}</span></div>
+        <div class="kv"><span class="k">Trades — already exist locally (skipped)</span><span class="v">${preview.tradesExisting}</span></div>
+        <div class="kv"><span class="k">Duplicates inside file (skipped)</span><span class="v">${preview.duplicatesInFile}</span></div>
+        <div class="kv"><span class="k">Invalid records (skipped)</span><span class="v">${preview.invalidTrades}</span></div>
+        ${preview.nameCollisions.length ? `<div class="hint" style="color:var(--amber);margin-top:8px;">⚠ ${preview.nameCollisions.length} imported account(s) share a name with a local account but have a different ID — both will be kept as separate accounts (name: ${preview.nameCollisions.map(a=>esc(a.name)).join(", ")}).</div>` : ""}
+        ${preview.legacyNoAccount.length ? `
+          <div class="divider"></div>
+          <div class="field">
+            <label>${preview.legacyNoAccount.length} imported trade(s) do not reference a known Account. Select a destination:</label>
+            <select id="imp_destAccount">
+              ${activeAccounts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}
+            </select>
+            ${!activeAccounts.length ? '<div class="hint" style="color:var(--red);">No active Account available — add one first.</div>' : ""}
+          </div>
+        ` : ""}
+        <div class="divider"></div>
+        <div class="hint"><b>Existing records will NOT be overwritten or deleted. Only new records will be added.</b> Local Settings are never changed by Import.</div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+          <button class="btn" id="impCancel">Cancel</button>
+          <button class="btn primary" id="impConfirm" ${totalNew===0 && preview.accountsNew.length===0 ? 'disabled' : ''}>${totalNew>0 ? `Import ${totalNew} New Trade${totalNew===1?'':'s'}` : (preview.accountsNew.length>0 ? 'Import New Data' : 'Nothing New To Import')}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const close = () => root.innerHTML = "";
+  document.getElementById("impClose").onclick = close;
+  document.getElementById("impCancel").onclick = close;
+  document.getElementById("impBackdrop").onclick = e => { if (e.target.id === "impBackdrop") close(); };
+  document.getElementById("impConfirm").onclick = async () => {
+    const destSelect = document.getElementById("imp_destAccount");
+    const destAccountId = destSelect ? destSelect.value : null;
+    if (preview.legacyNoAccount.length && !destAccountId) { toast("Select a destination account for unresolved trades."); return; }
+    await mergeImportedData(preview, destAccountId);
+    close();
+    router();
+  };
+}
+
+async function mergeImportedData(preview, destAccountId) {
+  // 1. New accounts only — never overwrite an existing account by ID.
+  for (const a of preview.accountsNew) {
+    await idbPut("accounts", a);
+    ACCOUNTS.push(a);
+  }
+  // 2. Legacy trades without a resolvable accountId get the chosen destination.
+  preview.legacyNoAccount.forEach(t => { t.accountId = destAccountId; });
+  // 3. Add only genuinely new trades (by tradeId) — existing IDs were already excluded in previewImport.
+  const toAdd = [...preview.tradesNew, ...preview.legacyNoAccount];
+  for (const t of toAdd) {
+    await idbPut("trades", t);
+    TRADES.push(t);
+  }
+  toast(`Imported ${toAdd.length} new trade(s) and ${preview.accountsNew.length} new account(s). ${preview.tradesExisting} already existed and were skipped.`);
+}
+
+function applyDisplaySettings() {
+  document.body.setAttribute("data-theme", SETTINGS.display.theme);
+  document.body.setAttribute("data-compact", SETTINGS.display.compact ? "1" : "0");
+}
+
+/* ---------------------------------------------------------------------
+   15. DEMO DATA (off by default, fully removable)
+   --------------------------------------------------------------------- */
+function generateDemoTrades() {
+  const out = [];
+  const biases = FRAMEWORK.biasOptions;
+  const sessions = SESSIONS;
+  for (let i = 0; i < 24; i++) {
+    const t = blankTrade();
+    t.isDemo = true;
+    const d = new Date(); d.setDate(d.getDate() - (24 - i) * 2);
+    t.date = d.toISOString().slice(0, 10);
+    t.session = sessions[i % sessions.length];
+    t.instrument = ["NQ","MNQ","ES","MES"][i % 4];
+    t.direction = i % 2 === 0 ? "Long" : "Short";
+    const bias = biases[i % biases.length];
+    t.framework.bias = bias;
+    t.marketContext.dailyBias = bias;
+    const conf = FRAMEWORK.confirmations[bias];
+    t.framework.confirmationTitle = conf.title;
+    conf.checks.forEach((c, idx) => { t.framework.confirmationChecks[c.id] = idx !== conf.checks.length - 1 || i % 3 !== 0; });
+    const relevantTriggers = FRAMEWORK.triggers.filter(tr => tr.session === t.session);
+    const trig = (relevantTriggers.length ? relevantTriggers : FRAMEWORK.triggers)[i % (relevantTriggers.length || FRAMEWORK.triggers.length)];
+    t.framework.trigger = trig.label;
+    trig.checks.forEach(c => { t.framework.triggerChecks[c.id] = true; });
+    t.marketContext.marketCondition = MARKET_CONDITIONS[i % MARKET_CONDITIONS.length];
+    const risk = 200;
+    t.execution.risk = risk; t.execution.contracts = 2; t.execution.entry = 100; t.execution.stopLoss = 95; t.execution.target = 115;
+    t.execution.plannedRR = "3.00";
+    const win = i % 3 !== 0;
+    const r = win ? (1 + (i % 3)) : -1;
+    t.management.finalR = r.toFixed(2);
+    t.management.finalPnL = (r * risk).toFixed(2);
+    t.management.exitType = win ? "TP" : "SL";
+    t.executionReview.contextScore = 14; t.executionReview.frameworkScore = 16; t.executionReview.entryScore = 15;
+    t.executionReview.riskScore = 15; t.executionReview.managementScore = i % 4 === 0 ? 8 : 16;
+    t.executionReview.ruleBreak = i % 7 === 0 ? "YES" : "NO";
+    if (t.executionReview.ruleBreak === "YES") t.executionReview.ruleBreakDescription = "Entered before full confirmation.";
+    t.review.followedPlan = t.executionReview.ruleBreak === "NO";
+    t.review.validSetup = i % 5 !== 0;
+    t.review.lesson = "Demo data — replace with real trades.";
+    out.push(deriveTrade(t));
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------------
+   16. INIT
+   --------------------------------------------------------------------- */
+async function loadAllData() {
+  TRADES = await idbGetAll("trades");
+  PLAYBOOKS = await idbGetAll("playbook");
+  REVIEWS = await idbGetAll("weeklyReviews");
+  ACCOUNTS = await idbGetAll("accounts");
+  let s = await idbGet("kv", "settings");
+  if (!s) { s = defaultSettings(); await idbPut("kv", s); }
+  SETTINGS = { ...defaultSettings(), ...s, account: { ...defaultSettings().account, ...(s.account||{}) }, journal: { ...defaultSettings().journal, ...(s.journal||{}) }, display: { ...defaultSettings().display, ...(s.display||{}) }, riskControl: { ...defaultSettings().riskControl, ...(s.riskControl||{}) } };
+  applyDisplaySettings();
+  await migrateAccountsIfNeeded();
+}
+
+/* ---------------------------------------------------------------------
+   16b. ACCOUNT MIGRATION (idempotent — safe to run on every load)
+   Runs only when ACCOUNTS is empty, so it never re-creates an Account
+   or re-imports Trades once migration has happened once. Never deletes
+   or overwrites existing Trades — only fills in a missing accountId.
+   --------------------------------------------------------------------- */
+async function migrateAccountsIfNeeded() {
+  // Step 1: if no Accounts exist yet, create exactly one from the legacy
+  // single-account Settings block so no existing configuration is lost.
+  if (ACCOUNTS.length === 0) {
+    const legacy = SETTINGS.account || {};
+    const migrated = blankAccount({
+      name: legacy.accountName || "My Account",
+      accountSize: legacy.accountSize || 0,
+      startingBalance: legacy.startingBalance || 0,
+      profitTarget: legacy.profitTarget || 0,
+      maxDrawdown: legacy.maxDrawdown || 0,
+      dailyLossLimit: legacy.dailyLossLimit || 0,
+      riskPerTrade: legacy.riskPerTrade || 0,
+      defaultContract: legacy.defaultContract || "",
+      defaultInstrument: legacy.defaultInstrument || ""
+    });
+    await idbPut("accounts", migrated);
+    ACCOUNTS.push(migrated);
+  }
+
+  // Step 2: any Trade without a valid accountId (pre-patch Trades, or
+  // legacy imports) gets attached to a safe default Account. Existing
+  // Trade content is never rewritten beyond adding this one field.
+  const fallbackId = getPreferredAccountId();
+  const orphans = TRADES.filter(t => !t.accountId || !getAccountById(t.accountId));
+  if (orphans.length && fallbackId) {
+    for (const t of orphans) {
+      t.accountId = fallbackId;
+      await idbPut("trades", t);
+    }
+  }
+
+  // Step 3: make sure a lastAccountId preference is set so New Trade has a sane default.
+  if (!SETTINGS.lastAccountId || !getAccountById(SETTINGS.lastAccountId)) {
+    const preferred = getPreferredAccountId();
+    if (preferred) { SETTINGS.lastAccountId = preferred; await idbPut("kv", SETTINGS); }
+  }
+}
+
+window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    await openDB();
+    await loadAllData();
+  } catch (err) {
+    // Last-resort safety net: never leave the user on a stuck loading screen.
+    USE_MEMORY_FALLBACK = true;
+    try { await loadAllData(); } catch (err2) { /* even the in-memory path failed to init; router() below still renders the shell */ }
+  }
+  router();
+  if (USE_MEMORY_FALLBACK) showStorageFallbackBanner();
+});
+
+function showStorageFallbackBanner() {
+  const bar = document.createElement("div");
+  bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:300;background:var(--amber-dim);color:var(--amber);border-bottom:1px solid var(--border);padding:9px 16px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:12px;";
+  bar.innerHTML = `<span>Persistent storage isn't available in this preview, so trades entered here won't be saved after a refresh. Download this file and open it directly in your browser (double-click it, or drag it into a browser tab) for permanent local storage.</span>`;
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "×";
+  closeBtn.style.cssText = "background:none;border:none;color:var(--amber);font-size:18px;cursor:pointer;flex-shrink:0;line-height:1;";
+  closeBtn.onclick = () => bar.remove();
+  bar.appendChild(closeBtn);
+  document.body.prepend(bar);
+}
+</script>
+</body>
+</html>
