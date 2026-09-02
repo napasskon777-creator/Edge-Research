@@ -1396,13 +1396,16 @@ function renderReviewStep(body, t) {
     </div>
     <div class="field"><label>Emotional Control (0–5)</label><input type="number" min="0" max="5" id="emoControl" value="${t.psychology.emotionalControl}"></div>
     <div class="divider"></div>
-    <div class="section-title" style="margin-top:0;">Screenshots</div>
+    <div class="section-title" style="margin-top:0;">Screenshots <span class="hint">วางลิงก์รูป เช่น TradingView snapshot</span></div>
     <div class="grid grid-3">
       ${["before","entry","after"].map(k => `
         <div>
           <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:5px;text-transform:capitalize;">${k}</label>
-          <input type="file" accept="image/*" id="shot_${k}" style="font-size:11px;">
-          <div class="thumb-row">${t.screenshots[k] ? `<img class="thumb" src="${t.screenshots[k]}">` : ""}</div>
+          <input type="text" id="shot_${k}" value="${esc(t.screenshots[k] || '')}" placeholder="วางลิงก์ที่นี่">
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button type="button" class="btn sm" id="shotClear_${k}" ${t.screenshots[k] ? '' : 'disabled'}>ลบลิงก์</button>
+            ${t.screenshots[k] ? `<a class="btn sm" href="${esc(t.screenshots[k])}" target="_blank" rel="noopener noreferrer">เปิดดู</a>` : ''}
+          </div>
         </div>
       `).join("")}
     </div>
@@ -1440,9 +1443,18 @@ function renderReviewStep(body, t) {
   });
   document.getElementById("emoControl").oninput = e => t.psychology.emotionalControl = Number(e.target.value);
   ["before","entry","after"].forEach(k => {
-    document.getElementById("shot_" + k).onchange = async e => {
-      const file = e.target.files[0];
-      if (file) { t.screenshots[k] = await readFileAsDataURL(file); renderReviewStep(body, t); }
+    const input = document.getElementById("shot_" + k);
+    const clearBtn = document.getElementById("shotClear_" + k);
+    input.oninput = e => {
+      const v = e.target.value.trim();
+      t.screenshots[k] = v === "" ? null : v;
+      clearBtn.disabled = !t.screenshots[k];
+    };
+    // Re-render so the "เปิดดู" link and button state reflect the saved value.
+    input.onblur = () => renderReviewStep(body, t);
+    clearBtn.onclick = () => {
+      t.screenshots[k] = null;
+      renderReviewStep(body, t);
     };
   });
   document.getElementById("rv_followedPlan").onchange = e => t.review.followedPlan = e.target.value === "" ? null : e.target.value === "yes";
@@ -1620,7 +1632,7 @@ function openTradeDetail(tradeId) {
         <p><b>Lesson:</b> ${esc(t.review.lesson) || '—'}</p>
         <p><b>Next time:</b> ${esc(t.review.nextTime) || '—'}</p>
         <p><b>Notes:</b> ${esc(t.notes) || '—'}</p>
-        ${shots.length ? `<div><b>Screenshots</b><div class="thumb-row">${shots.map(k => `<img class="thumb" style="width:120px;height:120px;" src="${t.screenshots[k]}" title="${k}">`).join("")}</div></div>` : ""}
+        ${shots.length ? `<div><b>Screenshots</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">${shots.map(k => `<a class="btn sm" href="${esc(t.screenshots[k])}" target="_blank" rel="noopener noreferrer" style="text-transform:capitalize;text-decoration:none;">${k} ↗</a>`).join("")}</div></div>` : ""}
         <div class="divider"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button class="btn danger" id="deleteTradeBtn">Delete</button>
