@@ -2342,15 +2342,67 @@ function openAccountEditor(existing) {
    Rule: EXISTING ID -> KEEP LOCAL. NEW ID -> ADD. Never overwrite,
    never delete, never touch local Settings. Restore (above) is the only
    destructive path, and it is a separate, explicitly-labeled button.
+
+   Account matching (bugfix): an imported Account is matched against local
+   Accounts in this order —
+     1) by accountId (exact match -> same account, no remap needed)
+     2) if no id match, by accountName:
+          - exactly one local Account shares the name -> treat as the same
+            account; imported trades are remapped onto the LOCAL id
+          - two or more local Accounts share the name -> ambiguous, never
+            auto-picked; surfaced to the user as an explicit conflict to
+            resolve before the import can proceed
+          - no local Account shares the name -> genuinely new Account
+   Only genuinely-new Accounts are ever added. Existing Accounts (matched
+   by id or by name) are never overwritten, renamed, or duplicated.
    --------------------------------------------------------------------- */
-function previewImport(data) {
+function previewImport(data, nameConflictResolutions) {
+  nameConflictResolutions = nameConflictResolutions || {}; // { importedAccountId: localAccountId | "__new__" }
   const localTradeIds = new Set(TRADES.map(t => t.tradeId));
   const localAccountIds = new Set(ACCOUNTS.map(a => a.id));
   const importedAccountsRaw = Array.isArray(data.accounts) ? data.accounts : [];
 
-  const accountsNew = importedAccountsRaw.filter(a => a && a.id && !localAccountIds.has(a.id));
-  const accountsExistingCount = importedAccountsRaw.filter(a => a && a.id && localAccountIds.has(a.id)).length;
-  const nameCollisions = accountsNew.filter(a => ACCOUNTS.some(local => local.name === a.name));
+  // Canonical remap: imported accountId -> the id that should actually be written to
+  // Trades from here on (either an existing local id, or the imported account's own id
+  // when it truly is new).
+  const accountIdRemap = new Map();
+  const accountsNew = [];            // genuinely new accounts to add (Rule: never auto-created otherwise)
+  const accountsMatchedById = [];    // Rule 1: imported id already exists locally
+  const accountsMatchedByName = [];  // Rule 2/3/4: no id match, but exactly one local account shares the name
+  const nameConflicts = [];          // Rule 9: no id match, name matches 2+ local accounts — needs user input
+
+  importedAccountsRaw.forEach(a => {
+    if (!a || !a.id) return;
+    // Rule 1: match by accountId first.
+    if (localAccountIds.has(a.id)) {
+      accountIdRemap.set(a.id, a.id);
+      accountsMatchedById.push(a);
+      return;
+    }
+    // Rule 2: accountId not found locally -> fall back to accountName.
+    const candidates = ACCOUNTS.filter(local => local.name === a.name);
+    if (candidates.length === 1) {
+      // Rule 3/4: exactly one local account has this name -> same account, local id is canonical.
+      accountIdRemap.set(a.id, candidates[0].id);
+      accountsMatchedByName.push({ imported: a, local: candidates[0] });
+    } else if (candidates.length > 1) {
+      // Rule 9: ambiguous — never auto-pick.
+      const resolution = nameConflictResolutions[a.id];
+      if (resolution === "__new__") {
+        accountIdRemap.set(a.id, a.id);
+        accountsNew.push(a);
+      } else if (resolution && localAccountIds.has(resolution)) {
+        accountIdRemap.set(a.id, resolution);
+        accountsMatchedByName.push({ imported: a, local: getAccountById(resolution) });
+      } else {
+        nameConflicts.push({ importedAccount: a, candidates });
+      }
+    } else {
+      // No id match, no name match -> genuinely new account.
+      accountIdRemap.set(a.id, a.id);
+      accountsNew.push(a);
+    }
+  });
 
   // De-duplicate trades *within the file itself* by tradeId.
   const seen = new Set();
@@ -2369,15 +2421,37 @@ function previewImport(data) {
   let tradesExisting = 0;
   deduped.forEach(t => {
     if (localTradeIds.has(t.tradeId)) { tradesExisting++; return; }
-    if (t.accountId && resolvableAccountIds.has(t.accountId)) tradesNew.push(t);
-    else legacyNoAccount.push(t);
+    // Remap the trade's accountId from the imported id to the canonical local id
+    // (Rule 5) BEFORE deciding where it lands. Existing-by-tradeId trades above are
+    // never touched — this remap only ever applies to genuinely new trades.
+    let resolvedAccountId = t.accountId;
+    if (resolvedAccountId && accountIdRemap.has(resolvedAccountId)) {
+      resolvedAccountId = accountIdRemap.get(resolvedAccountId);
+    }
+    if (resolvedAccountId && resolvableAccountIds.has(resolvedAccountId)) {
+      t.accountId = resolvedAccountId; // canonical id from here on (Rule 6 then dedupes/adds by tradeId as before)
+      tradesNew.push(t);
+    } else {
+      // Still unresolved: missing accountId, or blocked behind an unresolved name conflict.
+      legacyNoAccount.push(t);
+    }
   });
 
-  return { accountsNew, accountsExistingCount, nameCollisions, tradesNew, legacyNoAccount, tradesExisting, duplicatesInFile, invalidTrades };
+  return {
+    accountsNew, accountsMatchedById, accountsMatchedByName, nameConflicts,
+    tradesNew, legacyNoAccount, tradesExisting, duplicatesInFile, invalidTrades
+  };
 }
 
-function openImportPreview(data) {
-  const preview = previewImport(data);
+function openImportPreview(data, nameConflictResolutions) {
+  const preview = previewImport(data, nameConflictResolutions);
+  // Rule 9: if any imported Account name is ambiguous against local Accounts, stop and
+  // ask the user to resolve each one explicitly before showing the merge preview at all.
+  if (preview.nameConflicts.length && !nameConflictResolutions) {
+    openImportNameConflictModal(data, preview.nameConflicts);
+    return;
+  }
+
   const root = document.getElementById("modal-root");
   const totalNew = preview.tradesNew.length + preview.legacyNoAccount.length;
   const activeAccounts = getActiveAccounts();
@@ -2391,16 +2465,17 @@ function openImportPreview(data) {
         </div>
         <div class="divider"></div>
         <div class="kv"><span class="k">Accounts — new</span><span class="v pos">${preview.accountsNew.length}</span></div>
-        <div class="kv"><span class="k">Accounts — already exist locally</span><span class="v">${preview.accountsExistingCount}</span></div>
+        <div class="kv"><span class="k">Accounts — matched by ID (already local)</span><span class="v">${preview.accountsMatchedById.length}</span></div>
+        <div class="kv"><span class="k">Accounts — matched by name (merged, no duplicate)</span><span class="v">${preview.accountsMatchedByName.length}</span></div>
         <div class="kv"><span class="k">Trades — new</span><span class="v pos">${totalNew}</span></div>
         <div class="kv"><span class="k">Trades — already exist locally (skipped)</span><span class="v">${preview.tradesExisting}</span></div>
         <div class="kv"><span class="k">Duplicates inside file (skipped)</span><span class="v">${preview.duplicatesInFile}</span></div>
         <div class="kv"><span class="k">Invalid records (skipped)</span><span class="v">${preview.invalidTrades}</span></div>
-        ${preview.nameCollisions.length ? `<div class="hint" style="color:var(--amber);margin-top:8px;">⚠ ${preview.nameCollisions.length} imported account(s) share a name with a local account but have a different ID — both will be kept as separate accounts (name: ${preview.nameCollisions.map(a=>esc(a.name)).join(", ")}).</div>` : ""}
+        ${preview.accountsMatchedByName.length ? `<div class="hint" style="color:var(--accent);margin-top:8px;">🔗 Matched by name (imported ID differed, existing local account kept — no new account created): ${preview.accountsMatchedByName.map(m => `"${esc(m.imported.name)}" → local "${esc(m.local.name)}"`).join(", ")}</div>` : ""}
         ${preview.legacyNoAccount.length ? `
           <div class="divider"></div>
           <div class="field">
-            <label>${preview.legacyNoAccount.length} imported trade(s) do not reference a known Account. Select a destination:</label>
+            <label>${preview.legacyNoAccount.length} imported trade(s) do not reference a resolvable Account. Select a destination:</label>
             <select id="imp_destAccount">
               ${activeAccounts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}
             </select>
@@ -2430,21 +2505,61 @@ function openImportPreview(data) {
   };
 }
 
+// Rule 9 UI: lets the user explicitly choose, per ambiguous imported Account name,
+// which local Account it really is (or to keep it as a separate new Account). Nothing
+// is ever auto-selected here — the import cannot proceed past this until resolved.
+function openImportNameConflictModal(data, conflicts) {
+  const root = document.getElementById("modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="impConflictBackdrop">
+      <div class="modal">
+        <div class="modal-head"><h2>Resolve Account Name Conflicts</h2><button class="close-x" id="impConflictClose">&times;</button></div>
+        <div class="hint" style="margin-bottom:12px;">These imported Accounts don't match a local Account by ID, and their name matches more than one local Account. Choose the correct match for each — nothing is decided automatically.</div>
+        ${conflicts.map((c, i) => `
+          <div class="field">
+            <label>Imported Account: <b>${esc(c.importedAccount.name)}</b> <span class="hint">(imported ID: ${esc(c.importedAccount.id)})</span></label>
+            <select id="conflict_${i}">
+              ${c.candidates.map(local => `<option value="${local.id}">Merge into "${esc(local.name)}" — local ID ${esc(local.id)}</option>`).join("")}
+              <option value="__new__">Keep separate — add as a new Account</option>
+            </select>
+          </div>
+        `).join("")}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+          <button class="btn" id="impConflictCancel">Cancel</button>
+          <button class="btn primary" id="impConflictContinue">Continue</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const close = () => root.innerHTML = "";
+  document.getElementById("impConflictClose").onclick = close;
+  document.getElementById("impConflictCancel").onclick = close;
+  document.getElementById("impConflictBackdrop").onclick = e => { if (e.target.id === "impConflictBackdrop") close(); };
+  document.getElementById("impConflictContinue").onclick = () => {
+    const resolutions = {};
+    conflicts.forEach((c, i) => { resolutions[c.importedAccount.id] = document.getElementById("conflict_" + i).value; });
+    openImportPreview(data, resolutions);
+  };
+}
+
 async function mergeImportedData(preview, destAccountId) {
-  // 1. New accounts only — never overwrite an existing account by ID.
+  // 1. Only genuinely new accounts are added (Rule: never create duplicates). Accounts
+  //    matched by ID or by name are never written here — their local record is untouched.
   for (const a of preview.accountsNew) {
     await idbPut("accounts", a);
     ACCOUNTS.push(a);
   }
   // 2. Legacy trades without a resolvable accountId get the chosen destination.
   preview.legacyNoAccount.forEach(t => { t.accountId = destAccountId; });
-  // 3. Add only genuinely new trades (by tradeId) — existing IDs were already excluded in previewImport.
+  // 3. Add only genuinely new trades (by tradeId) — existing IDs were already excluded in
+  //    previewImport, and accountId on each was already remapped to the canonical local id.
   const toAdd = [...preview.tradesNew, ...preview.legacyNoAccount];
   for (const t of toAdd) {
     await idbPut("trades", t);
     TRADES.push(t);
   }
-  toast(`Imported ${toAdd.length} new trade(s) and ${preview.accountsNew.length} new account(s). ${preview.tradesExisting} already existed and were skipped.`);
+  const mergedByName = preview.accountsMatchedByName.length;
+  toast(`Imported ${toAdd.length} new trade(s) and ${preview.accountsNew.length} new account(s). ${preview.tradesExisting} trade(s) already existed and were skipped.${mergedByName ? ' ' + mergedByName + ' account(s) matched by name and were merged into the existing account.' : ''}`);
 }
 
 function applyDisplaySettings() {
