@@ -1,10 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png">
-<link rel="apple-touch-icon" href="/icon-180.png">
-<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Edge Research System — Trading Journal</title>
@@ -320,6 +316,22 @@ const FRAMEWORK = Object.freeze({
       checks: [
         { id: "t1", label: "CONFIRMATION C2 [15m CISD >confirm> 4h Closure]" },
         { id: "t2", label: "ENTRY C3 [5m CISD]" }
+      ]
+    },
+    {
+      key: "london_continuation", session: "London", label: "London : Continuation",
+      location: "On validation zone of Asia",
+      checks: [
+        { id: "t1", label: "CONFIRMATION C2 [5m CISD >confirm> 1h Closure]" },
+        { id: "t2", label: "ENTRY C3 [15m, 5m CISD]" }
+      ]
+    },
+    {
+      key: "ny_continuation", session: "New York", label: "New York : Continuation",
+      location: "On validation zone of London",
+      checks: [
+        { id: "t1", label: "CONFIRMATION C2 [5m CISD >confirm> 1h Closure]" },
+        { id: "t2", label: "ENTRY C3 [15m, 5m CISD]" }
       ]
     }
   ]
@@ -654,6 +666,11 @@ function blankTrade() {
 
     screenshots: { before: null, entry: null, after: null },
 
+    // Trade-level research variable, chosen manually by the trader in Final Review.
+    // Allowed: "Aggressive" | "Conservative" | null (unclassified).
+    // Never inferred from outcome, R, bias, confirmation, trigger, session or any other field.
+    entryExecutionStyle: null,
+
     notes: "",
     isDemo: false,
     createdAt: new Date().toISOString(),
@@ -863,7 +880,8 @@ const DIMENSIONS = {
       if (s >= 60) return "60–69"; return "Below 60";
     } },
   classification: { label: "Classification", fn: t => t.classification.label },
-  frameworkValidity: { label: "Framework Valid", fn: t => t.review.validSetup === true ? "Valid" : (t.review.validSetup === false ? "Invalid" : "") }
+  frameworkValidity: { label: "Framework Valid", fn: t => t.review.validSetup === true ? "Valid" : (t.review.validSetup === false ? "Invalid" : "") },
+  entryStyle: { label: "Entry Style", fn: t => t.entryExecutionStyle || "" }
 };
 
 /* ---------------------------------------------------------------------
@@ -1313,6 +1331,7 @@ function renderTriggerArea(t) {
   area.innerHTML = `
     <div class="framework-box">
       <div class="fw-title">${esc(tr.label)}</div>
+      ${tr.location ? `<div class="fw-sub">• ${esc(tr.location)}</div>` : ""}
       ${tr.checks.map(c => `
         <div class="check-row">
           <input type="checkbox" id="trg_${c.id}" ${t.framework.triggerChecks[c.id] ? 'checked' : ''}>
@@ -1415,6 +1434,13 @@ function renderReviewStep(body, t) {
       <div class="field"><label>Did I follow my plan?</label><select id="rv_followedPlan"><option value="">—</option><option value="yes" ${t.review.followedPlan===true?'selected':''}>YES</option><option value="no" ${t.review.followedPlan===false?'selected':''}>NO</option></select></div>
       <div class="field"><label>Was this a valid setup?</label><select id="rv_validSetup"><option value="">—</option><option value="yes" ${t.review.validSetup===true?'selected':''}>YES</option><option value="no" ${t.review.validSetup===false?'selected':''}>NO</option></select></div>
     </div>
+    <div class="field">
+      <label>Entry Execution Style <span class="hint">คุณเลือกเอง — ระบบไม่คำนวณให้ · กดซ้ำเพื่อยกเลิก</span></label>
+      <div class="chip-group" id="entryStyleChips">
+        ${["Aggressive","Conservative"].map(s => `<div class="chip ${t.entryExecutionStyle===s?'selected':''}" data-style="${s}">${s}</div>`).join("")}
+      </div>
+      <div class="hint" id="entryStyleState">${t.entryExecutionStyle ? esc(t.entryExecutionStyle) : "Unclassified — ปล่อยว่างได้"}</div>
+    </div>
     <div class="field"><label>What did I learn?</label><textarea id="rv_lesson">${esc(t.review.lesson)}</textarea></div>
     <div class="field"><label>What will I do differently next time?</label><textarea id="rv_nextTime">${esc(t.review.nextTime)}</textarea></div>
     <div class="field"><label>Notes</label><textarea id="rv_notes">${esc(t.notes)}</textarea></div>
@@ -1457,6 +1483,18 @@ function renderReviewStep(body, t) {
       renderReviewStep(body, t);
     };
   });
+  document.querySelectorAll("#entryStyleChips .chip").forEach(chip => {
+    chip.onclick = () => {
+      const s = chip.dataset.style;
+      // Toggle off when re-clicking the active style, so the trader can return to unclassified.
+      t.entryExecutionStyle = (t.entryExecutionStyle === s) ? null : s;
+      document.querySelectorAll("#entryStyleChips .chip").forEach(c => {
+        c.classList.toggle("selected", c.dataset.style === t.entryExecutionStyle);
+      });
+      document.getElementById("entryStyleState").textContent =
+        t.entryExecutionStyle ? t.entryExecutionStyle : "Unclassified — ปล่อยว่างได้";
+    };
+  });
   document.getElementById("rv_followedPlan").onchange = e => t.review.followedPlan = e.target.value === "" ? null : e.target.value === "yes";
   document.getElementById("rv_validSetup").onchange = e => { t.review.validSetup = e.target.value === "" ? null : e.target.value === "yes"; refreshPreview(t); };
   document.getElementById("rv_lesson").oninput = e => t.review.lesson = e.target.value;
@@ -1496,12 +1534,14 @@ async function persistTrade(trade) {
 /* ---------------------------------------------------------------------
    10. JOURNAL
    --------------------------------------------------------------------- */
-let journalFilters = { account: "", session: "", instrument: "", direction: "", bias: "", trigger: "", frameworkValid: "", classification: "", search: "", from: "", to: "" };
+let journalFilters = { account: "", session: "", instrument: "", direction: "", bias: "", trigger: "", frameworkValid: "", classification: "", entryStyle: "", search: "", from: "", to: "" };
 let journalSort = { key: "date", dir: "desc" };
 
 function applyJournalFilters(list) {
   return list.filter(t => {
     if (journalFilters.account && t.accountId !== journalFilters.account) return false;
+    if (journalFilters.entryStyle === "Unclassified" && t.entryExecutionStyle) return false;
+    if (journalFilters.entryStyle && journalFilters.entryStyle !== "Unclassified" && t.entryExecutionStyle !== journalFilters.entryStyle) return false;
     if (journalFilters.session && t.session !== journalFilters.session) return false;
     if (journalFilters.instrument && !t.instrument.toLowerCase().includes(journalFilters.instrument.toLowerCase())) return false;
     if (journalFilters.direction && t.direction !== journalFilters.direction) return false;
@@ -1549,6 +1589,7 @@ function renderJournal(main) {
       <select id="jf_trigger"><option value="">Trigger</option>${FRAMEWORK.triggers.map(tr=>`<option ${journalFilters.trigger===tr.label?'selected':''}>${esc(tr.label)}</option>`).join("")}</select>
       <select id="jf_valid"><option value="">Framework Valid?</option><option value="valid" ${journalFilters.frameworkValid==='valid'?'selected':''}>Valid</option><option value="invalid" ${journalFilters.frameworkValid==='invalid'?'selected':''}>Invalid</option></select>
       <select id="jf_class"><option value="">Classification</option>${["GOOD WIN","GOOD LOSS","BAD WIN","BAD LOSS","BREAKEVEN","PENDING"].map(c=>`<option ${journalFilters.classification===c?'selected':''}>${c}</option>`).join("")}</select>
+      <select id="jf_entryStyle"><option value="">Entry Style</option>${["Aggressive","Conservative","Unclassified"].map(s=>`<option ${journalFilters.entryStyle===s?'selected':''}>${s}</option>`).join("")}</select>
       <button class="btn sm" id="jf_clear">Clear</button>
     </div>
     <div class="card" style="padding:0;overflow-x:auto;">
@@ -1588,8 +1629,8 @@ function renderJournal(main) {
   const bind = (id, prop) => document.getElementById(id).oninput = e => { journalFilters[prop] = e.target.value; renderJournal(main); };
   bind("jf_search", "search"); bind("jf_from", "from"); bind("jf_to", "to"); bind("jf_instrument", "instrument");
   const bindSel = (id, prop) => document.getElementById(id).onchange = e => { journalFilters[prop] = e.target.value; renderJournal(main); };
-  bindSel("jf_account", "account"); bindSel("jf_session", "session"); bindSel("jf_direction", "direction"); bindSel("jf_bias", "bias"); bindSel("jf_trigger", "trigger"); bindSel("jf_valid", "frameworkValid"); bindSel("jf_class", "classification");
-  document.getElementById("jf_clear").onclick = () => { journalFilters = { account: "", session: "", instrument: "", direction: "", bias: "", trigger: "", frameworkValid: "", classification: "", search: "", from: "", to: "" }; renderJournal(main); };
+  bindSel("jf_account", "account"); bindSel("jf_session", "session"); bindSel("jf_direction", "direction"); bindSel("jf_bias", "bias"); bindSel("jf_trigger", "trigger"); bindSel("jf_valid", "frameworkValid"); bindSel("jf_class", "classification"); bindSel("jf_entryStyle", "entryStyle");
+  document.getElementById("jf_clear").onclick = () => { journalFilters = { account: "", session: "", instrument: "", direction: "", bias: "", trigger: "", frameworkValid: "", classification: "", entryStyle: "", search: "", from: "", to: "" }; renderJournal(main); };
 }
 
 function openTradeDetail(tradeId) {
@@ -1629,6 +1670,7 @@ function openTradeDetail(tradeId) {
         <div class="divider"></div>
         <div class="kv"><span class="k">Followed plan?</span><span class="v">${t.review.followedPlan===true?'YES':t.review.followedPlan===false?'NO':'—'}</span></div>
         <div class="kv"><span class="k">Valid setup?</span><span class="v">${t.review.validSetup===true?'YES':t.review.validSetup===false?'NO':'—'}</span></div>
+        <div class="kv"><span class="k">Entry Execution Style</span><span class="v">${t.entryExecutionStyle ? esc(t.entryExecutionStyle) : 'Unclassified'}</span></div>
         <p><b>Lesson:</b> ${esc(t.review.lesson) || '—'}</p>
         <p><b>Next time:</b> ${esc(t.review.nextTime) || '—'}</p>
         <p><b>Notes:</b> ${esc(t.notes) || '—'}</p>
@@ -1664,9 +1706,19 @@ function renderChecksReadonly(checks, values) {
    --------------------------------------------------------------------- */
 let edgeMatrixDims = ["bias", "session"];
 let analyticsAccountId = "";
+let analyticsEntryStyle = "";
+
+// Applies the Entry Style filter to an already account-filtered dataset.
+// "Unclassified" selects trades the trader has not classified (null).
+function applyEntryStyleFilter(list) {
+  if (!analyticsEntryStyle) return list;
+  if (analyticsEntryStyle === "Unclassified") return list.filter(t => !t.entryExecutionStyle);
+  return list.filter(t => t.entryExecutionStyle === analyticsEntryStyle);
+}
 
 function renderAnalytics(main) {
-  const aTrades = analyticsAccountId ? TRADES.filter(t => t.accountId === analyticsAccountId) : TRADES;
+  const accountScoped = analyticsAccountId ? TRADES.filter(t => t.accountId === analyticsAccountId) : TRADES;
+  const aTrades = applyEntryStyleFilter(accountScoped);
   const stats = computeAggregateStats(aTrades);
   main.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
@@ -1674,12 +1726,23 @@ function renderAnalytics(main) {
         <h1 class="page-title">Analytics</h1>
         <p class="page-sub">ค้นหา Edge ของฉัน — where do I actually have an advantage?</p>
       </div>
-      <div class="field" style="min-width:200px;margin-bottom:0;">
-        <label>Account</label>
-        <select id="analyticsAccountFilter">
-          <option value="">All Accounts</option>
-          ${ACCOUNTS.map(a => `<option value="${a.id}" ${analyticsAccountId===a.id?'selected':''}>${esc(a.name)}${a.archived?' (archived)':''}</option>`).join("")}
-        </select>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="field" style="min-width:190px;margin-bottom:0;">
+          <label>Account</label>
+          <select id="analyticsAccountFilter">
+            <option value="">All Accounts</option>
+            ${ACCOUNTS.map(a => `<option value="${a.id}" ${analyticsAccountId===a.id?'selected':''}>${esc(a.name)}${a.archived?' (archived)':''}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field" style="min-width:170px;margin-bottom:0;">
+          <label>Entry Style</label>
+          <select id="analyticsEntryStyleFilter">
+            <option value="">All</option>
+            <option value="Aggressive" ${analyticsEntryStyle==='Aggressive'?'selected':''}>Aggressive</option>
+            <option value="Conservative" ${analyticsEntryStyle==='Conservative'?'selected':''}>Conservative</option>
+            <option value="Unclassified" ${analyticsEntryStyle==='Unclassified'?'selected':''}>Unclassified</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -1721,6 +1784,12 @@ function renderAnalytics(main) {
     <div class="section-title">Framework Valid vs Invalid</div>
     <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.frameworkValidity.fn), ["Valid","Invalid"])}</div>
 
+    <div class="section-title">Entry Execution Style — Global <span class="hint">(research only — the system never recommends a style)</span></div>
+    <div class="card" style="padding:0;overflow-x:auto;">${entryStyleTable(aTrades)}</div>
+
+    <div class="section-title">Trigger × Entry Style <span class="hint">(ทุก Trigger ที่มีข้อมูลจริง)</span></div>
+    <div class="card" style="padding:0;overflow-x:auto;">${triggerByEntryStyleTable(aTrades)}</div>
+
     <div class="section-title">Edge Matrix</div>
     <div class="card">
       <div class="hint" style="margin-bottom:10px;">Combine dimensions to search for potential edges. Nothing here is labeled a confirmed "edge" — only a <b>Potential Edge</b>, and only once sample size is meaningful.</div>
@@ -1741,6 +1810,7 @@ function renderAnalytics(main) {
     };
   });
   document.getElementById("analyticsAccountFilter").onchange = e => { analyticsAccountId = e.target.value; renderAnalytics(main); };
+  document.getElementById("analyticsEntryStyleFilter").onchange = e => { analyticsEntryStyle = e.target.value; renderAnalytics(main); };
   renderMatrixResults();
 }
 
@@ -1762,6 +1832,97 @@ function edgeTable(groups, order) {
         <td>${fmtNum(g.stats.avgExecution,1)}</td>
         <td><span class="sample-tag ${g.sample.cls}">${g.sample.label} (${g.trades.length})</span></td>
       </tr>`).join("")}
+    </tbody>
+  </table>`;
+}
+
+/* ADD-ONLY: Entry Execution Style research tables.
+   Both renderers reuse the existing computeAggregateStats() and sampleSizeLabel()
+   helpers — no metric is recalculated or redefined here. Unclassified trades are
+   counted and shown, but are deliberately excluded from the Aggressive and
+   Conservative rows. Nothing here recommends a style; it only reports the data. */
+function entryStyleTable(trades) {
+  const groups = [
+    { key: "All Trades", trades: trades },
+    { key: "Aggressive", trades: trades.filter(t => t.entryExecutionStyle === "Aggressive") },
+    { key: "Conservative", trades: trades.filter(t => t.entryExecutionStyle === "Conservative") },
+    { key: "Unclassified", trades: trades.filter(t => !t.entryExecutionStyle) }
+  ];
+  if (!trades.length) return '<div class="empty-state">No data yet.</div>';
+  return `<table>
+    <thead><tr>
+      <th>Group</th><th>n</th><th>Win Rate</th><th>Loss Rate</th><th>Total R</th><th>Avg R</th>
+      <th>Avg Win R</th><th>Avg Loss R</th><th>Expectancy</th><th>Profit Factor</th>
+      <th>Max Win Streak</th><th>Max Loss Streak</th><th>Sample</th>
+    </tr></thead>
+    <tbody>
+    ${groups.map(g => {
+      const n = g.trades.length;
+      if (!n) {
+        // Zero-sample group: show the count only, never fabricated statistics.
+        return `<tr><td>${esc(g.key)}</td><td>0</td><td colspan="11" style="color:var(--text-faint);white-space:normal;">No classified trades</td></tr>`;
+      }
+      const s = computeAggregateStats(g.trades);
+      const sample = sampleSizeLabel(n);
+      return `<tr>
+        <td>${esc(g.key)}</td>
+        <td>${n}</td>
+        <td>${fmtPct(s.winRate)}</td>
+        <td>${fmtPct(s.lossRate)}</td>
+        <td class="${s.netR>=0?'pos':'neg'}">${fmtR(s.netR)}</td>
+        <td class="${s.avgR>=0?'pos':'neg'}">${fmtR(s.avgR)}</td>
+        <td>${fmtR(s.avgWinR)}</td>
+        <td>-${fmtNum(s.avgLossR)}R</td>
+        <td class="${s.expectancy>=0?'pos':'neg'}">${fmtR(s.expectancy)}</td>
+        <td>${fmtPF(s.profitFactor)}</td>
+        <td>${s.winStreak}</td>
+        <td>${s.lossStreak}</td>
+        <td><span class="sample-tag ${sample.cls}">${sample.label}</span></td>
+      </tr>`;
+    }).join("")}
+    </tbody>
+  </table>`;
+}
+
+function triggerByEntryStyleTable(trades) {
+  // Trigger list comes from the data itself via the existing DIMENSIONS.trigger accessor,
+  // so every Trigger in the model — including any added later — appears automatically.
+  const triggerGroups = groupTrades(trades, DIMENSIONS.trigger.fn);
+  if (!triggerGroups.length) return '<div class="empty-state">No data yet.</div>';
+  triggerGroups.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  const cell = (list) => {
+    if (!list.length) return `<td colspan="4" style="color:var(--text-faint);">—</td>`;
+    const s = computeAggregateStats(list);
+    return `<td>${list.length}</td>
+      <td>${fmtPct(s.winRate)}</td>
+      <td class="${s.avgR>=0?'pos':'neg'}">${fmtR(s.avgR)}</td>
+      <td class="${s.expectancy>=0?'pos':'neg'}">${fmtR(s.expectancy)}</td>`;
+  };
+  return `<table>
+    <thead>
+      <tr>
+        <th rowspan="2" style="vertical-align:bottom;">Trigger</th>
+        <th colspan="4" style="border-bottom:none;">Aggressive</th>
+        <th colspan="4" style="border-bottom:none;">Conservative</th>
+        <th rowspan="2" style="vertical-align:bottom;">Unclassified</th>
+      </tr>
+      <tr>
+        <th>n</th><th>Win Rate</th><th>Avg R</th><th>Expectancy</th>
+        <th>n</th><th>Win Rate</th><th>Avg R</th><th>Expectancy</th>
+      </tr>
+    </thead>
+    <tbody>
+    ${triggerGroups.map(g => {
+      const agg = g.trades.filter(t => t.entryExecutionStyle === "Aggressive");
+      const con = g.trades.filter(t => t.entryExecutionStyle === "Conservative");
+      const unc = g.trades.filter(t => !t.entryExecutionStyle).length;
+      return `<tr>
+        <td style="white-space:normal;">${esc(g.key)}</td>
+        ${cell(agg)}
+        ${cell(con)}
+        <td>${unc}</td>
+      </tr>`;
+    }).join("")}
     </tbody>
   </table>`;
 }
@@ -2162,13 +2323,14 @@ function renderSettings(main) {
   document.getElementById("backupBtn").onclick = () => document.getElementById("exportJsonBtn").click();
 
   document.getElementById("exportCsvBtn").onclick = () => {
-    const headers = ["date","time","account","session","instrument","direction","dailyBias","marketCondition","trigger","frameworkValid","entry","stopLoss","target","contracts","risk","plannedRR","exitType","exitPrice","finalPnL","finalR","mfe","mae","contextScore","frameworkScore","entryScore","riskScore","managementScore","totalScore","ruleBreak","classification","followedPlan","validSetup","lesson","nextTime","notes"];
+    const headers = ["date","time","account","session","instrument","direction","dailyBias","marketCondition","trigger","frameworkValid","entry","stopLoss","target","contracts","risk","plannedRR","exitType","exitPrice","finalPnL","finalR","mfe","mae","contextScore","frameworkScore","entryScore","riskScore","managementScore","totalScore","ruleBreak","classification","followedPlan","validSetup","lesson","nextTime","notes","entryExecutionStyle"];
     const rows = TRADES.map(t => [
       t.date, t.time, resolveAccountName(t.accountId), t.session, t.instrument, t.direction, t.framework.bias, t.marketContext.marketCondition, t.framework.trigger,
       t.review.validSetup, t.execution.entry, t.execution.stopLoss, t.execution.target, t.execution.contracts, t.execution.risk, t.execution.plannedRR,
       t.management.exitType, t.management.exitPrice, t.management.finalPnL, t.management.finalR, t.management.mfe, t.management.mae,
       t.executionReview.contextScore, t.executionReview.frameworkScore, t.executionReview.entryScore, t.executionReview.riskScore, t.executionReview.managementScore,
-      t.executionReview.totalScore, t.executionReview.ruleBreak, t.classification.label, t.review.followedPlan, t.review.validSetup, t.review.lesson, t.review.nextTime, t.notes
+      t.executionReview.totalScore, t.executionReview.ruleBreak, t.classification.label, t.review.followedPlan, t.review.validSetup, t.review.lesson, t.review.nextTime, t.notes,
+      t.entryExecutionStyle || "Unclassified"
     ]);
     const csv = [headers.join(","), ...rows.map(r => r.map(csvEscape).join(","))].join("\n");
     downloadFile("trading-journal-" + todayISO() + ".csv", csv, "text/csv");
@@ -2630,6 +2792,10 @@ function generateDemoTrades() {
    --------------------------------------------------------------------- */
 async function loadAllData() {
   TRADES = await idbGetAll("trades");
+  // Backward compatibility: trades saved before entryExecutionStyle existed have no such
+  // property. Treat them as unclassified (null) in memory. Nothing is written back to the
+  // database and no historical trade is ever auto-classified or guessed.
+  TRADES.forEach(t => { if (t.entryExecutionStyle === undefined) t.entryExecutionStyle = null; });
   PLAYBOOKS = await idbGetAll("playbook");
   REVIEWS = await idbGetAll("weeklyReviews");
   ACCOUNTS = await idbGetAll("accounts");
