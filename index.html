@@ -219,6 +219,20 @@ textarea{min-height:70px;resize:vertical;font-family:var(--sans);}
   .bottom-nav svg{width:18px;height:18px;}
   .grid-4,.grid-3{grid-template-columns:1fr 1fr;}
 }
+/* ==== ADDED: Framework Configuration Editor styles (additive only) ==== */
+.fw-cfg-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-soft);border-radius:var(--radius);background:var(--bg-2);margin-bottom:6px;}
+.fw-cfg-item.disabled{opacity:0.5;}
+.fw-cfg-item .grow{flex:1;min-width:0;}
+.fw-cfg-item .lbl{font-size:13px;}
+.fw-cfg-item .meta{font-size:11px;color:var(--text-faint);font-family:var(--mono);}
+.fw-cfg-item .ord-btns{display:flex;flex-direction:column;gap:2px;}
+.fw-cfg-item .ord-btns button{padding:0 6px;font-size:11px;line-height:1.4;}
+.pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-family:var(--sans);font-weight:600;}
+.pill.req{background:var(--accent-dim);color:var(--accent);}
+.pill.opt{background:var(--bg-3);color:var(--text-faint);}
+.pill.ver{background:var(--green-dim);color:var(--green);}
+.pill.draft{background:var(--amber-dim);color:var(--amber);}
+.pill.locked{background:var(--bg-3);color:var(--text-dim);}
 </style>
 </head>
 <body data-theme="dark" data-compact="0">
@@ -238,109 +252,214 @@ textarea{min-height:70px;resize:vertical;font-family:var(--sans);}
 /* =========================================================================
    EDGE RESEARCH SYSTEM — TRADING JOURNAL
    Single-file local-first application (IndexedDB persistence)
+
+   FRAMEWORK UPDATE (Configuration-Driven + Versioning)
+   ---------------------------------------------------------------------
+   This build PATCHES the original app. The old hard-coded FRAMEWORK const
+   has been replaced by a configuration-driven layer (FRAMEWORK_CONFIG /
+   FrameworkVersion) while every non-framework subsystem — IndexedDB,
+   Journal, Risk, Analytics, Import/Export, Accounts, Review, Playbook —
+   is preserved. Historical trades keep the exact framework data recorded
+   at the time; nothing old is reclassified or rewritten.
    ========================================================================= */
 
 /* ---------------------------------------------------------------------
-   1. FRAMEWORK — SOURCE OF TRUTH. Do not alter wording, order, or logic.
+   1. FRAMEWORK CONFIGURATION — CONFIGURATION-DRIVEN (replaces old const)
+   ---------------------------------------------------------------------
+   LAYER 1 (Configuration): the data below is only the *seed* for the
+   default published Framework Version. At runtime the active configuration
+   lives in ACTIVE_FRAMEWORK (a FrameworkVersion.config object) loaded from
+   IndexedDB, and can be edited by the user in Settings → Framework without
+   any Core-Engine code change.
+
+   Every entity carries a STABLE id (never the array index), plus
+   enabled / order, and — for checklist items — required. The Core Engine
+   reads these generically:  requiredItems.every(i => checked[i.id] === true)
    --------------------------------------------------------------------- */
-const FRAMEWORK = Object.freeze({
-  biasOptions: ["Reversal", "Continuation", "Opposing Setup forms", "Invalidation of EQ"],
 
-  confirmations: {
-    "Reversal": {
-      title: "Bias Daily Reversal | A+",
-      checks: [
-        { id: "c1", label: "Daily POI mitigated hand-left" },
-        { id: "c2", label: "1H CISD in C2 of Daily" },
-        { id: "c3", label: "4h Closure on Asia, London | 1h Closure on NY [H|OLD]" }
-      ]
-    },
-    "Continuation": {
-      title: "Bias Daily Continuation | A+",
-      checks: [
-        { id: "c1", label: "Daily confirm C2 Closure" },
-        { id: "c2", label: "Target Daily Unmitigated" },
-        { id: "c3", label: "[POI] FVG,OB on Validation zone" },
-        { id: "c4", label: "POI mitigated" },
-        { id: "c5", label: "4h Closure on Asia, London | 1h Closure on NY [H|OLD]" }
-      ]
-    },
-    "Opposing Setup forms": {
-      title: "Bias Daily Invalidation 2 options | A+",
-      subtitle: "Opposing Setup forms",
-      optionLabel: "Price manipulated H/L",
-      checks: [
-        { id: "c1", label: "Price manipulation PDH/L on Daily POI" },
-        { id: "c2", label: "SMT on Daily" }
-      ]
-    },
-    "Invalidation of EQ": {
-      title: "Bias Daily Invalidation 2 options | A+",
-      subtitle: "Invalidation of EQ",
-      optionLabel: "Price disrespected EQ",
-      checks: [
-        { id: "c1", label: "Disrespected POI" },
-        { id: "c2", label: "Mitigated EQ" },
-        { id: "c3", label: "NY Opposing C2 [15m CISD >confirm> 4h Closure]" }
-      ]
-    }
+// Small stable-id helper for seeded config (deterministic, readable ids).
+function _cid(prefix, n) { return prefix + "_" + n; }
+
+// ---- DAILY BIAS MODELS (new spec: Reversal / C2 Cont / C3 Cont / Invalidation of EQ)
+const SEED_BIAS_MODELS = [
+  {
+    id: "bias_reversal", name: "Reversal", enabled: true, order: 1,
+    description: "[POI or Numbering Phase + PDH/L Sweep]",
+    checklist: [
+      { id: "rv_1", label: "On POI or Numbering Phase", enabled: true, required: true, order: 1 },
+      { id: "rv_2", label: "Sweep PDH/L first", enabled: true, required: true, order: 2 },
+      { id: "rv_3", label: "Asia slowly forms Protected Swing", enabled: true, required: true, order: 3 },
+      { id: "rv_4", label: "Opposite 1H CISD", enabled: true, required: true, order: 4 },
+      { id: "rv_5", label: "1H Closure [V-shape]", enabled: true, required: true, order: 5 },
+      { id: "rv_6", label: "Target : EQ", enabled: true, required: true, order: 6 }
+    ]
   },
+  {
+    id: "bias_c2_continuation", name: "C2 Continuations", enabled: true, order: 2,
+    description: "C2 Valid Closure",
+    checklist: [
+      { id: "c2_1", label: "Previous Day: C2 Closure confirm with \"1h CISD confirm\" in C2 + Wick reject Closure", enabled: true, required: true, order: 1 },
+      { id: "c2_2", label: "C3 Open: forms Wick in Validation Zone first", enabled: true, required: true, order: 2 },
+      { id: "c2_3", label: "In Validation Zone: Respect EQ", enabled: true, required: true, order: 3 },
+      { id: "c2_4", label: "Target: PDH/L, PWH/L", enabled: true, required: true, order: 4 }
+    ]
+  },
+  {
+    id: "bias_c3_continuation", name: "C3 Continuations", enabled: true, order: 3,
+    description: "C3 Valid Closure",
+    checklist: [
+      { id: "c3_1", label: "Previous Day C2 Fail \"1h CISD\": C3 Closure confirm with \"1h CISD confirm\" in C3", enabled: true, required: true, order: 1 },
+      { id: "c3_2", label: "In Validation Zone: Respect EQ", enabled: true, required: true, order: 2 },
+      { id: "c3_3", label: "Target: PDH/L, PWH/L", enabled: true, required: true, order: 3 }
+    ]
+  },
+  {
+    id: "bias_invalidation_eq", name: "Invalidation of EQ", enabled: true, order: 4,
+    description: "Price disrespected EQ",
+    checklist: [
+      { id: "iv_1", label: "Day open: Mitigated on Invalidation Zone [EQ]", enabled: true, required: true, order: 1 },
+      { id: "iv_2", label: "1h disrespect on first time touch: 1h consolidation", enabled: true, required: true, order: 2 },
+      { id: "iv_3", label: "POI opposite: Swing 1h CISD Closure [Manipulation] OR 1h CISD Closure [Breakout EQ] in invalidation zone", enabled: true, required: true, order: 3 },
+      { id: "iv_4", label: "Target: PDH/L", enabled: true, required: true, order: 4 }
+    ]
+  }
+];
 
-  triggers: [
-    {
-      key: "asia_continuation", session: "Asia", label: "Asia : Continuation",
-      checks: [
-        { id: "t1", label: "CONFIRMATION C2 Previous Day [1h CISD >confirm> Daily Closure] , C2 Intraday [4h Closure]" },
-        { id: "t2", label: "ENTRY C3 [1h, 15m CISD]" }
-      ]
-    },
-    {
-      key: "asia_reversal", session: "Asia", label: "Asia : Reversal",
-      checks: [
-        { id: "t1", label: "CONFIRMATION C2 [15m CISD >confirm> 4h Closure]" },
-        { id: "t2", label: "ENTRY C3 [1h, 15m CISD]" }
-      ]
-    },
-    {
-      key: "london_reversal", session: "London", label: "London : Reversal",
-      checks: [
-        { id: "t1", label: "CONFIRMATION C2 [15m CISD >confirm> 4h Closure]" },
-        { id: "t2", label: "ENTRY C3 [30m, 15m CISD]" }
-      ]
-    },
-    {
-      key: "ny_reversal", session: "New York", label: "New York : Reversal",
-      checks: [
-        { id: "t1", label: "CONFIRMATION C2 [5m CISD >confirm> 1h Closure]" },
-        { id: "t2", label: "ENTRY C3 [5m CISD]" }
-      ]
-    },
-    {
-      key: "ny_invalidation", session: "New York", label: "New York : Invalidation opposing CISD",
-      checks: [
-        { id: "t1", label: "CONFIRMATION C2 [15m CISD >confirm> 4h Closure]" },
-        { id: "t2", label: "ENTRY C3 [5m CISD]" }
-      ]
-    },
-    {
-      key: "london_continuation", session: "London", label: "London : Continuation",
-      location: "On validation zone of Asia",
-      checks: [
-        { id: "t1", label: "CONFIRMATION C2 [5m CISD >confirm> 1h Closure]" },
-        { id: "t2", label: "ENTRY C3 [15m, 5m CISD]" }
-      ]
-    },
-    {
-      key: "ny_continuation", session: "New York", label: "New York : Continuation",
-      location: "On validation zone of London",
-      checks: [
-        { id: "t1", label: "CONFIRMATION C2 [5m CISD >confirm> 1h Closure]" },
-        { id: "t2", label: "ENTRY C3 [15m, 5m CISD]" }
-      ]
-    }
-  ]
-});
+// ---- C2 INTRADAY research layer (NEW)
+const SEED_C2_POI = [
+  { id: "poi_fvg", label: "FVG", enabled: true, order: 1 },
+  { id: "poi_swing", label: "Swing Point", enabled: true, order: 2 },
+  { id: "poi_ob", label: "Order Block", enabled: true, order: 3 },
+  { id: "poi_smt", label: "SMT", enabled: true, order: 4 },
+  { id: "poi_c2_4h", label: "C2 of 4h [No POI]", enabled: true, order: 5 }
+];
+const SEED_C2_TF = [
+  { id: "tf_0200", label: "02:00", enabled: true, order: 1 },
+  { id: "tf_0300", label: "03:00 — for LD 5m CISD at POI", enabled: true, order: 2 },
+  { id: "tf_0400", label: "04:00 — for LD 5m CISD at POI", enabled: true, order: 3 },
+  { id: "tf_0500", label: "05:00 — for LD 5m CISD at POI", enabled: true, order: 4 },
+  { id: "tf_0600", label: "06:00", enabled: true, order: 5 },
+  { id: "tf_0700", label: "07:00 — for NY", enabled: true, order: 6 },
+  { id: "tf_0800", label: "08:00 — for NY", enabled: true, order: 7 },
+  { id: "tf_0900", label: "09:00 — for NY", enabled: true, order: 8 },
+  { id: "tf_1000", label: "10:00", enabled: true, order: 9 },
+  { id: "tf_1400", label: "14:00", enabled: true, order: 10 },
+  { id: "tf_1800", label: "18:00", enabled: true, order: 11 },
+  { id: "tf_2200", label: "22:00", enabled: true, order: 12 }
+];
+const SEED_C2_SCENARIOS = [
+  { id: "scn_reversal", label: "Reversal [C2 Small Wick]", enabled: true, order: 1 },
+  { id: "scn_cont_c2", label: "Continuation C2 Closure [C2 Large Wick]", enabled: true, order: 2 },
+  { id: "scn_cont_c3", label: "Continuation C3 Closure [C3 EQ validation zone]", enabled: true, order: 3 }
+];
 
+// ---- ENTRY MODEL = TRIGGER (same thing, kept under the name "Trigger" in UI)
+// Session-specific checklists per the new spec. Replaces the old trigger set.
+const SEED_TRIGGER_SESSIONS = [
+  {
+    id: "sess_asia", name: "Asia", enabled: true, order: 1,
+    checklist: [
+      { id: "as_1", label: "Previous Day Closes make 4h Closure [Continuation] | Asia breakout PCH/L [Reversal]", enabled: true, required: true, order: 1 },
+      { id: "as_2", label: "4h Closure confirm C2 on Time [14:00, 18:00]", enabled: true, required: true, order: 2 },
+      { id: "as_3", label: "1h CISD Closure : Entry", enabled: true, required: true, order: 3 }
+    ]
+  },
+  {
+    id: "sess_london", name: "London", enabled: true, order: 2,
+    checklist: [
+      { id: "ld_1", label: "Asia Accumulation > LD Manipulation on Time", enabled: true, required: true, order: 1 },
+      { id: "ld_2", label: "4h, 1h Closure confirm C2 on Time [22:00, 02:00, 03:00, 04:00, 05:00]", enabled: true, required: true, order: 2 },
+      { id: "ld_3", label: "15m, 5m CISD Closure : Entry", enabled: true, required: true, order: 3 }
+    ]
+  },
+  {
+    id: "sess_ny", name: "NY", enabled: true, order: 3,
+    checklist: [
+      { id: "ny_1", label: "Asia, LD : Accumulation", enabled: true, required: true, order: 1 },
+      { id: "ny_2", label: "4h, 1h Closure confirm C2 on Time [06:00, 07:00, 08:00, 09:00]", enabled: true, required: true, order: 2 },
+      { id: "ny_3", label: "5m CISD Closure : Entry", enabled: true, required: true, order: 3 }
+    ]
+  }
+];
+
+// A full Framework Configuration snapshot (the payload of a FrameworkVersion).
+function seedFrameworkConfig() {
+  return {
+    biasModels: JSON.parse(JSON.stringify(SEED_BIAS_MODELS)),
+    c2Intraday: {
+      poiOptions: JSON.parse(JSON.stringify(SEED_C2_POI)),
+      tfOptions: JSON.parse(JSON.stringify(SEED_C2_TF)),
+      scenarios: JSON.parse(JSON.stringify(SEED_C2_SCENARIOS))
+    },
+    triggerSessions: JSON.parse(JSON.stringify(SEED_TRIGGER_SESSIONS))
+  };
+}
+
+// A FrameworkVersion record. status: "draft" | "published" | "locked".
+function makeFrameworkVersion(version, status, config) {
+  const now = new Date().toISOString();
+  return {
+    id: "fw_" + uuid(),
+    version: version,
+    status: status || "published",
+    config: config || seedFrameworkConfig(),
+    createdAt: now,
+    publishedAt: status === "published" || status === "locked" ? now : null
+  };
+}
+
+/* Runtime pointers set during init:
+   FRAMEWORK_VERSIONS : all versions (array)
+   ACTIVE_FRAMEWORK   : the version used for NEW trades (published/locked)  */
+let FRAMEWORK_VERSIONS = [];
+let ACTIVE_FRAMEWORK = null;
+
+// --- Accessors that always read the ACTIVE framework, filtered to enabled+sorted.
+function _byOrder(a, b) { return (a.order || 0) - (b.order || 0); }
+function activeConfig() { return ACTIVE_FRAMEWORK ? ACTIVE_FRAMEWORK.config : seedFrameworkConfig(); }
+function activeBiasModels() { return activeConfig().biasModels.filter(m => m.enabled).slice().sort(_byOrder); }
+function activePOIOptions() { return activeConfig().c2Intraday.poiOptions.filter(o => o.enabled).slice().sort(_byOrder); }
+function activeTFOptions() { return activeConfig().c2Intraday.tfOptions.filter(o => o.enabled).slice().sort(_byOrder); }
+function activeScenarios() { return activeConfig().c2Intraday.scenarios.filter(o => o.enabled).slice().sort(_byOrder); }
+function activeTriggerSessions() { return activeConfig().triggerSessions.filter(s => s.enabled).slice().sort(_byOrder); }
+function enabledChecklist(item) { return (item.checklist || []).filter(c => c.enabled).slice().sort(_byOrder); }
+function requiredChecklist(item) { return (item.checklist || []).filter(c => c.enabled && c.required).slice().sort(_byOrder); }
+
+// Resolve helpers that search a given config snapshot (so historical versions work too).
+function findBiasModelInConfig(config, modelId) {
+  if (!config) return null;
+  return config.biasModels.find(m => m.id === modelId) || null;
+}
+function findTriggerSessionInConfig(config, sessionId) {
+  if (!config) return null;
+  return config.triggerSessions.find(s => s.id === sessionId) || null;
+}
+function frameworkVersionById(id) { return FRAMEWORK_VERSIONS.find(v => v.id === id) || null; }
+// The config that a trade was recorded under. Falls back to active for legacy trades.
+function configForTrade(trade) {
+  if (trade.frameworkVersionId) {
+    const v = frameworkVersionById(trade.frameworkVersionId);
+    if (v) return v.config;
+  }
+  return null; // legacy trade — caller uses the trade's own stored labels
+}
+
+// Model is confirmed only when ALL enabled+required checklist items are checked.
+// No thresholds, no percentages, no evidence counts.
+function isBiasModelConfirmed(model, checkedMap) {
+  const req = requiredChecklist(model);
+  if (!req.length) return false;
+  return req.every(c => checkedMap && checkedMap[c.id] === true);
+}
+function isTriggerSessionConfirmed(session, checkedMap) {
+  const req = requiredChecklist(session);
+  if (!req.length) return false;
+  return req.every(c => checkedMap && checkedMap[c.id] === true);
+}
+
+/* ---------------------------------------------------------------------
+   1b. LEGACY CONSTANTS PRESERVED (unchanged non-framework enums)
+   --------------------------------------------------------------------- */
 const SESSIONS = ["Asia", "London", "New York"];
 const MARKET_CONDITIONS = ["Expansion", "Retracement", "Consolidation", "Reversal"];
 const PSYCH_STATES = ["Calm", "Fear", "FOMO", "Greed", "Revenge", "Overconfidence", "Impatient", "Other"];
@@ -361,20 +480,19 @@ const REMINDERS = [
   "Loss without revenge.",
   "No Setup = No Trade."
 ];
-
 /* ---------------------------------------------------------------------
    2. INDEXEDDB LAYER
    --------------------------------------------------------------------- */
 const DB_NAME = "edgeResearchDB";
-const DB_VERSION = 2; // v2: added "accounts" store (Account Management patch). Existing stores are untouched on upgrade.
+const DB_VERSION = 3; // v3: added "framework" store (Framework Configuration + Versions). v2 stores untouched on upgrade.
 let dbInstance = null;
 let USE_MEMORY_FALLBACK = false; // true when IndexedDB is unavailable/blocked/hangs (e.g. sandboxed preview)
 
 // In-memory fallback store — same shape/keys as the IndexedDB stores. Used only when
 // real IndexedDB cannot be opened, so the app still loads and works (data just won't
 // persist across a reload in that specific environment).
-const MEM_STORE = { trades: new Map(), playbook: new Map(), weeklyReviews: new Map(), kv: new Map(), accounts: new Map() };
-const MEM_KEYPATH = { trades: "tradeId", playbook: "id", weeklyReviews: "id", kv: "key", accounts: "id" };
+const MEM_STORE = { trades: new Map(), playbook: new Map(), weeklyReviews: new Map(), kv: new Map(), accounts: new Map(), framework: new Map() };
+const MEM_KEYPATH = { trades: "tradeId", playbook: "id", weeklyReviews: "id", kv: "key", accounts: "id", framework: "id" };
 
 function openDB() {
   return new Promise((resolve) => {
@@ -397,6 +515,7 @@ function openDB() {
         if (!db.objectStoreNames.contains("weeklyReviews")) db.createObjectStore("weeklyReviews", { keyPath: "id" });
         if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv", { keyPath: "key" });
         if (!db.objectStoreNames.contains("accounts")) db.createObjectStore("accounts", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("framework")) db.createObjectStore("framework", { keyPath: "id" });
       };
       req.onsuccess = (e) => {
         if (settled) return;
@@ -579,19 +698,37 @@ function defaultSettings() {
     },
     goodExecutionThreshold: 70,
     lastAccountId: null, // UI preference only — remembers last selected Account for New Trade
+    activeFrameworkVersionId: null, // set during framework migration/init
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
 }
 let SETTINGS = null;
-
 /* ---------------------------------------------------------------------
    5. TRADE MODEL
+   ---------------------------------------------------------------------
+   PATCH: framework fields are now configuration-driven and reference stable
+   IDs from the ACTIVE FrameworkVersion, while ALL legacy fields are kept so
+   old trades load unchanged.
+
+   New fields:
+     trade.frameworkVersionId          -> which FrameworkVersion this trade used
+     trade.framework.biasModelId       -> stable id of chosen Daily Bias model
+     trade.framework.confirmationChecks-> { checklistItemId: bool }  (reused key)
+     trade.framework.triggerSessionId  -> stable id of chosen Trigger (Entry) session
+     trade.framework.triggerChecks     -> { checklistItemId: bool }  (reused key)
+     trade.c2Intraday.whichPOI         -> ARRAY of POI option ids (multi-select)
+     trade.c2Intraday.whichTF          -> single TF option id | ""
+     trade.c2Intraday.scenario         -> single scenario id | ""
+
+   Legacy fields kept for old trades (never written for new ones unless present):
+     trade.framework.bias / confirmationTitle / trigger  (free text snapshots)
    --------------------------------------------------------------------- */
 function blankTrade() {
   return {
     tradeId: uuid(),
     accountId: getPreferredAccountId(),
+    frameworkVersionId: ACTIVE_FRAMEWORK ? ACTIVE_FRAMEWORK.id : null,
     date: todayISO(),
     time: nowTimeStr(),
     session: SETTINGS?.journal?.defaultSession || "New York",
@@ -606,12 +743,26 @@ function blankTrade() {
     },
 
     framework: {
+      // NEW id-based selections
+      biasModelId: "",
+      confirmationChecks: {},
+      triggerSessionId: "",
+      triggerChecks: {},
+      frameworkValid: null,
+      // Human-readable snapshots (filled on save for resilient display/export)
+      biasName: "",
+      triggerName: "",
+      // Legacy fields (kept so old trades & old exports still round-trip)
       bias: "",
       confirmationTitle: "",
-      confirmationChecks: {},
-      trigger: "",
-      triggerChecks: {},
-      frameworkValid: null
+      trigger: ""
+    },
+
+    // NEW C2 Intraday research layer
+    c2Intraday: {
+      whichPOI: [],   // multi-select: array of stable POI ids
+      whichTF: "",    // single-select: TF id
+      scenario: ""    // single-select: scenario id
     },
 
     execution: {
@@ -672,7 +823,6 @@ function blankTrade() {
 
     // Trade-level research variable, chosen manually by the trader in Final Review.
     // Allowed: "Aggressive" | "Conservative" | null (unclassified).
-    // Never inferred from outcome, R, bias, confirmation, trigger, session or any other field.
     entryExecutionStyle: null,
 
     notes: "",
@@ -683,10 +833,7 @@ function blankTrade() {
 }
 
 /* ---------------------------------------------------------------------
-   5b. ACCOUNT MODEL (Account Management patch — additive only)
-   Accounts are a data dimension on top of the existing Framework/Journal.
-   They do not alter Framework, Bias, Confirmation, Trigger, or Analytics
-   formulas in any way — they only scope which Trades are included.
+   5b. ACCOUNT MODEL (unchanged)
    --------------------------------------------------------------------- */
 function blankAccount(seed) {
   const now = new Date().toISOString();
@@ -707,7 +854,6 @@ function blankAccount(seed) {
   };
 }
 
-// Centralized lookups/CRUD — reused everywhere instead of duplicating logic.
 function getAccounts() { return ACCOUNTS; }
 function getActiveAccounts() { return ACCOUNTS.filter(a => !a.archived); }
 function getAccountById(id) { return ACCOUNTS.find(a => a.id === id) || null; }
@@ -728,8 +874,6 @@ function resolveAccountName(accountId) {
   const acc = getAccountById(accountId);
   return acc ? acc.name : "Unknown Account";
 }
-// The account a new/legacy Trade should default to: last used (if still valid & active),
-// else the first active Account, else the first Account of any status, else null.
 function getPreferredAccountId() {
   const lastId = SETTINGS && SETTINGS.lastAccountId;
   if (lastId) {
@@ -748,7 +892,7 @@ async function setLastAccountId(id) {
 function getTradeById(id) { return TRADES.find(t => t.tradeId === id) || null; }
 
 /* ---------------------------------------------------------------------
-   6. CALCULATION ENGINE
+   6. CALCULATION ENGINE (unchanged — process vs outcome separation kept)
    --------------------------------------------------------------------- */
 function computeExecutionTotal(er) {
   const c = Number(er.contextScore) || 0;
@@ -782,11 +926,8 @@ function computeClassification(trade) {
 }
 
 function deriveTrade(trade) {
-  // Execution score total
   trade.executionReview.totalScore = computeExecutionTotal(trade.executionReview);
-  // Framework validity mirrors the user's own Final Review answer (never auto-decided from Framework text)
   trade.framework.frameworkValid = trade.review.validSetup;
-  // Classification (process vs outcome separation)
   trade.classification = computeClassification(trade);
   trade.updatedAt = new Date().toISOString();
   return trade;
@@ -821,7 +962,6 @@ function computeAggregateStats(trades) {
   const validCount = trades.filter(t => t.review.validSetup === true).length;
   const frameworkCompliance = trades.length ? (validCount / trades.length) * 100 : 0;
 
-  // Drawdown & streaks based on chronological R sequence
   const chron = [...closed].sort((a, b) => new Date(a.date + "T" + (a.time || "00:00")) - new Date(b.date + "T" + (b.time || "00:00")));
   let equity = 0, peak = 0, maxDD = 0;
   let curStreak = 0, curType = null, winStreak = 0, lossStreak = 0;
@@ -854,7 +994,6 @@ function sampleSizeLabel(n) {
   return { label: "Very Low Sample", cls: "low" };
 }
 
-/* Group trades by a dimension extractor function, return array of {key, trades, stats, sample} */
 function groupTrades(trades, keyFn) {
   const map = new Map();
   trades.forEach(t => {
@@ -870,9 +1009,79 @@ function groupTrades(trades, keyFn) {
   return out;
 }
 
+/* ---------------------------------------------------------------------
+   6b. FRAMEWORK DISPLAY HELPERS (resolve stable ids -> human labels)
+   ---------------------------------------------------------------------
+   These make analytics/journal robust across framework versions and for
+   legacy trades. Priority: the trade's stored snapshot name -> the trade's
+   own framework-version config -> the active config -> legacy free text.
+   --------------------------------------------------------------------- */
+function tradeBiasLabel(t) {
+  if (t.framework && t.framework.biasName) return t.framework.biasName;
+  const cfg = configForTrade(t);
+  if (cfg && t.framework && t.framework.biasModelId) {
+    const m = findBiasModelInConfig(cfg, t.framework.biasModelId);
+    if (m) return m.name;
+  }
+  if (t.framework && t.framework.biasModelId) {
+    const m = findBiasModelInConfig(activeConfig(), t.framework.biasModelId);
+    if (m) return m.name;
+  }
+  // legacy free-text bias
+  return (t.framework && t.framework.bias) ? t.framework.bias : "";
+}
+function tradeTriggerLabel(t) {
+  if (t.framework && t.framework.triggerName) return t.framework.triggerName;
+  const cfg = configForTrade(t);
+  if (cfg && t.framework && t.framework.triggerSessionId) {
+    const s = findTriggerSessionInConfig(cfg, t.framework.triggerSessionId);
+    if (s) return s.name;
+  }
+  if (t.framework && t.framework.triggerSessionId) {
+    const s = findTriggerSessionInConfig(activeConfig(), t.framework.triggerSessionId);
+    if (s) return s.name;
+  }
+  return (t.framework && t.framework.trigger) ? t.framework.trigger : "";
+}
+// Resolve a POI id -> label using the trade's version config, then active, then id itself.
+function poiLabel(t, poiId) {
+  const cfg = configForTrade(t) || activeConfig();
+  const found = cfg.c2Intraday.poiOptions.find(o => o.id === poiId)
+    || activeConfig().c2Intraday.poiOptions.find(o => o.id === poiId);
+  return found ? found.label : poiId;
+}
+function tfLabel(t, tfId) {
+  if (!tfId) return "";
+  const cfg = configForTrade(t) || activeConfig();
+  const found = cfg.c2Intraday.tfOptions.find(o => o.id === tfId)
+    || activeConfig().c2Intraday.tfOptions.find(o => o.id === tfId);
+  return found ? found.label : tfId;
+}
+function scenarioLabel(t, scnId) {
+  if (!scnId) return "";
+  const cfg = configForTrade(t) || activeConfig();
+  const found = cfg.c2Intraday.scenarios.find(o => o.id === scnId)
+    || activeConfig().c2Intraday.scenarios.find(o => o.id === scnId);
+  return found ? found.label : scnId;
+}
+function tradeVersionLabel(t) {
+  if (!t.frameworkVersionId) return "Legacy";
+  const v = frameworkVersionById(t.frameworkVersionId);
+  return v ? ("V" + v.version) : "Unknown";
+}
+/* ---------------------------------------------------------------------
+   6c. ANALYTICS DIMENSIONS
+   ---------------------------------------------------------------------
+   PATCH: bias/trigger now resolve through the framework label helpers so
+   they work across versions and for legacy trades. NEW dimensions added
+   for C2 Intraday (TF, Scenario), Entry Session and Framework Version.
+   Multi-select POI is handled separately (a trade can belong to several
+   POI groups) via poiExplodedGroups() in Analytics — never flattened to
+   a single string.
+   --------------------------------------------------------------------- */
 const DIMENSIONS = {
-  bias: { label: "Bias", fn: t => t.framework.bias },
-  trigger: { label: "Trigger", fn: t => t.framework.trigger },
+  bias: { label: "Bias", fn: t => tradeBiasLabel(t) },
+  trigger: { label: "Trigger", fn: t => tradeTriggerLabel(t) },
   session: { label: "Session", fn: t => t.session },
   dayOfWeek: { label: "Day of Week", fn: t => DAY_NAMES[new Date(t.date + "T00:00:00").getDay()] },
   marketCondition: { label: "Market Condition", fn: t => t.marketContext.marketCondition },
@@ -885,7 +1094,11 @@ const DIMENSIONS = {
     } },
   classification: { label: "Classification", fn: t => t.classification.label },
   frameworkValidity: { label: "Framework Valid", fn: t => t.review.validSetup === true ? "Valid" : (t.review.validSetup === false ? "Invalid" : "") },
-  entryStyle: { label: "Entry Style", fn: t => t.entryExecutionStyle || "" }
+  entryStyle: { label: "Entry Style", fn: t => t.entryExecutionStyle || "" },
+  // NEW framework dimensions
+  c2TF: { label: "C2 of C4 TF", fn: t => t.c2Intraday ? tfLabel(t, t.c2Intraday.whichTF) : "" },
+  c2Scenario: { label: "Intraday Scenario", fn: t => t.c2Intraday ? scenarioLabel(t, t.c2Intraday.scenario) : "" },
+  frameworkVersion: { label: "Framework Version", fn: t => tradeVersionLabel(t) }
 };
 
 /* ---------------------------------------------------------------------
@@ -950,9 +1163,8 @@ function router() {
   location.hash = "#/dashboard";
 }
 window.addEventListener("hashchange", router);
-
 /* ---------------------------------------------------------------------
-   8. DASHBOARD
+   8. DASHBOARD (preserved; bias/trigger cells use framework label helpers)
    --------------------------------------------------------------------- */
 let dashboardAccountId = "";
 function renderDashboard(main) {
@@ -989,7 +1201,6 @@ function renderDashboard(main) {
 
   const recent = [...dashTrades].sort((a, b) => new Date(b.date + "T" + (b.time || "00:00")) - new Date(a.date + "T" + (a.time || "00:00"))).slice(0, 8);
 
-  // Equity curve (real journal data only)
   const chron = [...closedForBalance].sort((a, b) => new Date(a.date + "T" + (a.time || "00:00")) - new Date(b.date + "T" + (b.time || "00:00")));
   let running = Number(acc.startingBalance);
   const points = [{ x: 0, y: running }];
@@ -1065,8 +1276,8 @@ function renderDashboard(main) {
             <td>${esc(t.date)}</td>
             <td>${esc(resolveAccountName(t.accountId))}</td>
             <td>${esc(t.session)}</td>
-            <td>${esc(t.framework.bias)}</td>
-            <td>${esc(t.framework.trigger)}</td>
+            <td>${esc(tradeBiasLabel(t))}</td>
+            <td>${esc(tradeTriggerLabel(t))}</td>
             <td>${classificationBadge(t)}</td>
             <td class="${Number(t.management.finalR)>0?'pos':(Number(t.management.finalR)<0?'neg':'')}">${fmtR(t.management.finalR)}</td>
             <td>${t.executionReview.totalScore ?? '—'}</td>
@@ -1103,20 +1314,25 @@ function renderSparkline(points) {
     <path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>
   </svg>`;
 }
-
 /* ---------------------------------------------------------------------
    9. NEW TRADE (multi-step wizard)
+   ---------------------------------------------------------------------
+   PATCH: steps expanded to include the NEW C2 Intraday research step.
+   Bias (Framework) and Trigger steps are now fully configuration-driven —
+   they render whatever the ACTIVE FrameworkVersion defines, with no
+   hard-coded checklist counts. Confirmation is deterministic:
+   all enabled+required checklist items must be checked.
    --------------------------------------------------------------------- */
 let wizardTrade = null;
 let wizardStep = 0;
 let wizardEditingId = null;
-const WIZARD_STEPS = ["Context", "Framework", "Trigger", "Execution", "Management", "Review"];
+const WIZARD_STEPS = ["Context", "Framework", "C2 Intraday", "Trigger", "Execution", "Management", "Review"];
 
 function renderNewTrade(main, editId) {
   if (editId) {
     if (!wizardTrade || wizardEditingId !== editId) {
       const found = TRADES.find(t => t.tradeId === editId);
-      wizardTrade = found ? JSON.parse(JSON.stringify(found)) : blankTrade();
+      wizardTrade = found ? migrateTradeShape(JSON.parse(JSON.stringify(found))) : blankTrade();
       wizardEditingId = editId;
       wizardStep = 0;
     }
@@ -1128,7 +1344,9 @@ function renderNewTrade(main, editId) {
 
   main.innerHTML = `
     <h1 class="page-title">${wizardEditingId ? "Edit Trade" : "New Trade"}</h1>
-    <p class="page-sub">Record the setup exactly as it happened. Fast entry, no forced fields beyond what's needed.</p>
+    <p class="page-sub">Record the setup exactly as it happened. Fast entry, no forced fields beyond what's needed.
+      <span class="pill ver" style="margin-left:6px;">${esc(wizardTrade.frameworkVersionId ? tradeVersionLabel(wizardTrade) : "Legacy")}</span>
+    </p>
     <div class="wizard-steps" id="wizardSteps"></div>
     <div id="wizardBody" class="card"></div>
     <div style="display:flex;justify-content:space-between;margin-top:16px;">
@@ -1168,7 +1386,6 @@ function renderWizardStepBody() {
   const t = wizardTrade;
   if (wizardStep === 0) {
     const selectableAccounts = getActiveAccounts().slice();
-    // Keep the trade's current account selectable even if it has since been archived (edit mode).
     if (t.accountId && !selectableAccounts.some(a => a.id === t.accountId)) {
       const cur = getAccountById(t.accountId);
       if (cur) selectableAccounts.push(cur);
@@ -1202,8 +1419,10 @@ function renderWizardStepBody() {
   } else if (wizardStep === 1) {
     renderFrameworkStep(body, t);
   } else if (wizardStep === 2) {
-    renderTriggerStep(body, t);
+    renderC2IntradayStep(body, t);
   } else if (wizardStep === 3) {
+    renderTriggerStep(body, t);
+  } else if (wizardStep === 4) {
     body.innerHTML = `
       <div class="grid grid-3">
         <div class="field"><label>Entry Price</label><input type="number" step="any" id="f_entry" value="${t.execution.entry}"></div>
@@ -1223,7 +1442,7 @@ function renderWizardStepBody() {
       <div id="riskWarning"></div>
     `;
     bindStep3();
-  } else if (wizardStep === 4) {
+  } else if (wizardStep === 5) {
     body.innerHTML = `
       <div class="grid grid-3">
         <div class="field"><label>Exit Type</label><select id="f_exitType"><option value=""></option>${EXIT_TYPES.map(e => `<option ${t.management.exitType===e?'selected':''}>${e}</option>`).join("")}</select></div>
@@ -1238,7 +1457,7 @@ function renderWizardStepBody() {
       <div class="hint" style="margin-top:-6px;">No fixed TP model is enforced — trailing stops and manual exits are fully supported.</div>
     `;
     bindStep4();
-  } else if (wizardStep === 5) {
+  } else if (wizardStep === 6) {
     renderReviewStep(body, t);
   }
 }
@@ -1255,26 +1474,32 @@ function bindStep0() {
   document.getElementById("f_dayLow").oninput = e => t.marketContext.dayLow = e.target.value;
 }
 
+/* ---- FRAMEWORK (Daily Bias) STEP — configuration-driven ---- */
 function renderFrameworkStep(body, t) {
+  const models = activeBiasModels();
   body.innerHTML = `
+    <div class="section-title" style="margin-top:0;">Daily Bias <span class="hint">Model comes first — select one model, then complete its checklist</span></div>
     <div class="field">
-      <label>Daily Bias <span class="hint">รูปแบบการปิดของ Previous day + POI — select from Framework only</span></label>
       <div class="chip-group" id="biasChips">
-        ${FRAMEWORK.biasOptions.map(b => `<div class="chip ${t.framework.bias===b?'selected':''}" data-bias="${esc(b)}">${esc(b)}</div>`).join("")}
+        ${models.map(m => `<div class="chip ${t.framework.biasModelId===m.id?'selected':''}" data-id="${esc(m.id)}">${esc(m.name)}</div>`).join("")}
       </div>
+      ${models.length ? "" : '<div class="hint" style="color:var(--red);">No enabled Bias Models in the active Framework. Add one in Settings → Framework.</div>'}
     </div>
     <div class="divider"></div>
     <div id="confirmationArea"></div>
   `;
   document.querySelectorAll("#biasChips .chip").forEach(chip => {
     chip.onclick = () => {
-      const bias = chip.dataset.bias;
-      if (t.framework.bias !== bias) {
-        t.framework.bias = bias;
-        t.marketContext.dailyBias = bias;
+      const id = chip.dataset.id;
+      if (t.framework.biasModelId !== id) {
+        t.framework.biasModelId = id;
         t.framework.confirmationChecks = {};
-        const conf = FRAMEWORK.confirmations[bias];
-        t.framework.confirmationTitle = conf.title;
+        const m = activeConfig().biasModels.find(x => x.id === id);
+        t.framework.biasName = m ? m.name : "";
+        t.marketContext.dailyBias = t.framework.biasName;
+        // keep legacy free-text mirror for export compatibility
+        t.framework.bias = t.framework.biasName;
+        t.framework.confirmationTitle = m ? m.name : "";
       }
       renderFrameworkStep(body, t);
     };
@@ -1284,44 +1509,100 @@ function renderFrameworkStep(body, t) {
 
 function renderConfirmationArea(t) {
   const area = document.getElementById("confirmationArea");
-  if (!t.framework.bias) { area.innerHTML = '<div class="hint">Select a Daily Bias to reveal its Confirmation checklist.</div>'; return; }
-  const conf = FRAMEWORK.confirmations[t.framework.bias];
+  if (!t.framework.biasModelId) { area.innerHTML = '<div class="hint">Select a Daily Bias Model to reveal its Checklist.</div>'; return; }
+  const model = activeConfig().biasModels.find(m => m.id === t.framework.biasModelId);
+  if (!model) { area.innerHTML = '<div class="hint">Model not found in active framework.</div>'; return; }
+  const items = enabledChecklist(model);
+  const confirmed = isBiasModelConfirmed(model, t.framework.confirmationChecks);
   area.innerHTML = `
     <div class="framework-box">
-      <div class="fw-title">${esc(conf.title)}</div>
-      ${conf.subtitle ? `<div class="fw-sub">• ${esc(conf.subtitle)} | ${esc(conf.optionLabel)}</div>` : ""}
-      ${conf.checks.map(c => `
+      <div class="fw-title">${esc(model.name)}</div>
+      ${model.description ? `<div class="fw-sub">${esc(model.description)}</div>` : ""}
+      ${items.map(c => `
         <div class="check-row">
-          <input type="checkbox" id="chk_${c.id}" ${t.framework.confirmationChecks[c.id] ? 'checked' : ''}>
-          <label for="chk_${c.id}">${esc(c.label)}</label>
+          <input type="checkbox" id="chk_${esc(c.id)}" ${t.framework.confirmationChecks[c.id] ? 'checked' : ''}>
+          <label for="chk_${esc(c.id)}">${esc(c.label)} ${c.required ? '<span class="pill req">required</span>' : '<span class="pill opt">optional</span>'}</label>
         </div>
       `).join("")}
+      <div style="margin-top:10px;font-size:12px;">Model status: ${confirmed ? '<span class="pill req">CONFIRMED</span>' : '<span class="pill opt">not confirmed</span>'} <span class="hint">(all enabled + required items complete)</span></div>
     </div>
   `;
-  conf.checks.forEach(c => {
-    document.getElementById("chk_" + c.id).onchange = e => { t.framework.confirmationChecks[c.id] = e.target.checked; };
+  items.forEach(c => {
+    const el = document.getElementById("chk_" + c.id);
+    if (el) el.onchange = e => { t.framework.confirmationChecks[c.id] = e.target.checked; renderConfirmationArea(t); };
   });
 }
 
-function renderTriggerStep(body, t) {
-  const relevant = FRAMEWORK.triggers.filter(tr => tr.session === t.session);
-  const all = relevant.length ? relevant : FRAMEWORK.triggers;
+/* ---- C2 INTRADAY STEP (NEW) ---- */
+function renderC2IntradayStep(body, t) {
+  if (!t.c2Intraday) t.c2Intraday = { whichPOI: [], whichTF: "", scenario: "" };
+  const pois = activePOIOptions();
+  const tfs = activeTFOptions();
+  const scns = activeScenarios();
   body.innerHTML = `
+    <div class="section-title" style="margin-top:0;">C2 Intraday <span class="hint">[4h POI free | 1h + POI] — "confirmation last" · research data (no auto-classification)</span></div>
+
     <div class="field">
-      <label>Entry Intraday Model — H/L of the day <span class="hint">filtered by Session (${esc(t.session)}); switch Session in Step 1 to see other models</span></label>
-      <div class="chip-group" id="triggerChips">
-        ${all.map(tr => `<div class="chip ${t.framework.trigger===tr.label?'selected':''}" data-key="${tr.key}">${esc(tr.label)}</div>`).join("")}
+      <label>Which POI <span class="hint">multi-select — record every POI that was present</span></label>
+      <div class="chip-group" id="poiChips">
+        ${pois.map(o => `<div class="chip ${t.c2Intraday.whichPOI.includes(o.id)?'selected':''}" data-id="${esc(o.id)}">${esc(o.label)}</div>`).join("")}
       </div>
+      ${pois.length ? "" : '<div class="hint" style="color:var(--red);">No enabled POI options. Add them in Settings → Framework.</div>'}
+    </div>
+
+    <div class="divider"></div>
+    <div class="field">
+      <label>Which TF [C2 of C4] <span class="hint">single-select</span></label>
+      <select id="c2_tf">
+        <option value="">—</option>
+        ${tfs.map(o => `<option value="${esc(o.id)}" ${t.c2Intraday.whichTF===o.id?'selected':''}>${esc(o.label)}</option>`).join("")}
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Which Intraday Scenario <span class="hint">single-select</span></label>
+      <select id="c2_scenario">
+        <option value="">—</option>
+        ${scns.map(o => `<option value="${esc(o.id)}" ${t.c2Intraday.scenario===o.id?'selected':''}>${esc(o.label)}</option>`).join("")}
+      </select>
+    </div>
+  `;
+  document.querySelectorAll("#poiChips .chip").forEach(chip => {
+    chip.onclick = () => {
+      const id = chip.dataset.id;
+      const arr = t.c2Intraday.whichPOI;
+      const idx = arr.indexOf(id);
+      if (idx >= 0) arr.splice(idx, 1); else arr.push(id);
+      chip.classList.toggle("selected");
+    };
+  });
+  document.getElementById("c2_tf").onchange = e => t.c2Intraday.whichTF = e.target.value;
+  document.getElementById("c2_scenario").onchange = e => t.c2Intraday.scenario = e.target.value;
+}
+
+/* ---- TRIGGER (= Entry Model) STEP — configuration-driven, session-specific ---- */
+function renderTriggerStep(body, t) {
+  const sessions = activeTriggerSessions();
+  body.innerHTML = `
+    <div class="section-title" style="margin-top:0;">Trigger — C2 [H/L of the day] <span class="hint">select the Session being traded, then complete its checklist</span></div>
+    <div class="field">
+      <div class="chip-group" id="triggerChips">
+        ${sessions.map(s => `<div class="chip ${t.framework.triggerSessionId===s.id?'selected':''}" data-id="${esc(s.id)}">${esc(s.name)}</div>`).join("")}
+      </div>
+      ${sessions.length ? "" : '<div class="hint" style="color:var(--red);">No enabled Trigger sessions. Add them in Settings → Framework.</div>'}
     </div>
     <div class="divider"></div>
     <div id="triggerArea"></div>
   `;
   document.querySelectorAll("#triggerChips .chip").forEach(chip => {
     chip.onclick = () => {
-      const tr = FRAMEWORK.triggers.find(x => x.key === chip.dataset.key);
-      if (t.framework.trigger !== tr.label) {
-        t.framework.trigger = tr.label;
+      const id = chip.dataset.id;
+      if (t.framework.triggerSessionId !== id) {
+        t.framework.triggerSessionId = id;
         t.framework.triggerChecks = {};
+        const s = activeConfig().triggerSessions.find(x => x.id === id);
+        t.framework.triggerName = s ? s.name : "";
+        t.framework.trigger = t.framework.triggerName; // legacy mirror
       }
       renderTriggerStep(body, t);
     };
@@ -1330,22 +1611,26 @@ function renderTriggerStep(body, t) {
 }
 function renderTriggerArea(t) {
   const area = document.getElementById("triggerArea");
-  if (!t.framework.trigger) { area.innerHTML = '<div class="hint">Select a Trigger model to reveal its checklist.</div>'; return; }
-  const tr = FRAMEWORK.triggers.find(x => x.label === t.framework.trigger);
+  if (!t.framework.triggerSessionId) { area.innerHTML = '<div class="hint">Select a Session to reveal its checklist.</div>'; return; }
+  const session = activeConfig().triggerSessions.find(s => s.id === t.framework.triggerSessionId);
+  if (!session) { area.innerHTML = '<div class="hint">Session not found in active framework.</div>'; return; }
+  const items = enabledChecklist(session);
+  const confirmed = isTriggerSessionConfirmed(session, t.framework.triggerChecks);
   area.innerHTML = `
     <div class="framework-box">
-      <div class="fw-title">${esc(tr.label)}</div>
-      ${tr.location ? `<div class="fw-sub">• ${esc(tr.location)}</div>` : ""}
-      ${tr.checks.map(c => `
+      <div class="fw-title">${esc(session.name)}</div>
+      ${items.map(c => `
         <div class="check-row">
-          <input type="checkbox" id="trg_${c.id}" ${t.framework.triggerChecks[c.id] ? 'checked' : ''}>
-          <label for="trg_${c.id}">${esc(c.label)}</label>
+          <input type="checkbox" id="trg_${esc(c.id)}" ${t.framework.triggerChecks[c.id] ? 'checked' : ''}>
+          <label for="trg_${esc(c.id)}">${esc(c.label)} ${c.required ? '<span class="pill req">required</span>' : '<span class="pill opt">optional</span>'}</label>
         </div>
       `).join("")}
+      <div style="margin-top:10px;font-size:12px;">Entry status: ${confirmed ? '<span class="pill req">CONFIRMED</span>' : '<span class="pill opt">not confirmed</span>'} <span class="hint">(all enabled + required items complete)</span></div>
     </div>
   `;
-  tr.checks.forEach(c => {
-    document.getElementById("trg_" + c.id).onchange = e => { t.framework.triggerChecks[c.id] = e.target.checked; };
+  items.forEach(c => {
+    const el = document.getElementById("trg_" + c.id);
+    if (el) el.onchange = e => { t.framework.triggerChecks[c.id] = e.target.checked; renderTriggerArea(t); };
   });
 }
 
@@ -1480,7 +1765,6 @@ function renderReviewStep(body, t) {
       t.screenshots[k] = v === "" ? null : v;
       clearBtn.disabled = !t.screenshots[k];
     };
-    // Re-render so the "เปิดดู" link and button state reflect the saved value.
     input.onblur = () => renderReviewStep(body, t);
     clearBtn.onclick = () => {
       t.screenshots[k] = null;
@@ -1490,7 +1774,6 @@ function renderReviewStep(body, t) {
   document.querySelectorAll("#entryStyleChips .chip").forEach(chip => {
     chip.onclick = () => {
       const s = chip.dataset.style;
-      // Toggle off when re-clicking the active style, so the trader can return to unclassified.
       t.entryExecutionStyle = (t.entryExecutionStyle === s) ? null : s;
       document.querySelectorAll("#entryStyleChips .chip").forEach(c => {
         c.classList.toggle("selected", c.dataset.style === t.entryExecutionStyle);
@@ -1534,12 +1817,28 @@ async function persistTrade(trade) {
   const idx = TRADES.findIndex(t => t.tradeId === trade.tradeId);
   if (idx >= 0) TRADES[idx] = trade; else TRADES.push(trade);
 }
-
 /* ---------------------------------------------------------------------
    10. JOURNAL
+   ---------------------------------------------------------------------
+   PATCH: bias/trigger filters now list ACTIVE framework model/session names
+   (plus any legacy label found in existing trades, so old trades stay
+   filterable). Detail modal renders new C2 Intraday research fields and
+   resolves checklist labels from the trade's own framework version.
    --------------------------------------------------------------------- */
 let journalFilters = { account: "", session: "", instrument: "", direction: "", bias: "", trigger: "", frameworkValid: "", classification: "", entryStyle: "", search: "", from: "", to: "" };
 let journalSort = { key: "date", dir: "desc" };
+
+// Union of active model names + any bias labels present in historical trades.
+function biasFilterOptions() {
+  const set = new Set(activeConfig().biasModels.map(m => m.name));
+  TRADES.forEach(t => { const l = tradeBiasLabel(t); if (l) set.add(l); });
+  return Array.from(set);
+}
+function triggerFilterOptions() {
+  const set = new Set(activeConfig().triggerSessions.map(s => s.name));
+  TRADES.forEach(t => { const l = tradeTriggerLabel(t); if (l) set.add(l); });
+  return Array.from(set);
+}
 
 function applyJournalFilters(list) {
   return list.filter(t => {
@@ -1549,8 +1848,8 @@ function applyJournalFilters(list) {
     if (journalFilters.session && t.session !== journalFilters.session) return false;
     if (journalFilters.instrument && !t.instrument.toLowerCase().includes(journalFilters.instrument.toLowerCase())) return false;
     if (journalFilters.direction && t.direction !== journalFilters.direction) return false;
-    if (journalFilters.bias && t.framework.bias !== journalFilters.bias) return false;
-    if (journalFilters.trigger && t.framework.trigger !== journalFilters.trigger) return false;
+    if (journalFilters.bias && tradeBiasLabel(t) !== journalFilters.bias) return false;
+    if (journalFilters.trigger && tradeTriggerLabel(t) !== journalFilters.trigger) return false;
     if (journalFilters.frameworkValid === "valid" && t.review.validSetup !== true) return false;
     if (journalFilters.frameworkValid === "invalid" && t.review.validSetup !== false) return false;
     if (journalFilters.classification && t.classification.label !== journalFilters.classification) return false;
@@ -1589,8 +1888,8 @@ function renderJournal(main) {
       <select id="jf_session"><option value="">Session</option>${SESSIONS.map(s=>`<option ${journalFilters.session===s?'selected':''}>${s}</option>`).join("")}</select>
       <input type="text" id="jf_instrument" placeholder="Instrument" value="${esc(journalFilters.instrument)}">
       <select id="jf_direction"><option value="">Direction</option><option ${journalFilters.direction==='Long'?'selected':''}>Long</option><option ${journalFilters.direction==='Short'?'selected':''}>Short</option></select>
-      <select id="jf_bias"><option value="">Bias</option>${FRAMEWORK.biasOptions.map(b=>`<option ${journalFilters.bias===b?'selected':''}>${esc(b)}</option>`).join("")}</select>
-      <select id="jf_trigger"><option value="">Trigger</option>${FRAMEWORK.triggers.map(tr=>`<option ${journalFilters.trigger===tr.label?'selected':''}>${esc(tr.label)}</option>`).join("")}</select>
+      <select id="jf_bias"><option value="">Bias</option>${biasFilterOptions().map(b=>`<option ${journalFilters.bias===b?'selected':''}>${esc(b)}</option>`).join("")}</select>
+      <select id="jf_trigger"><option value="">Trigger</option>${triggerFilterOptions().map(tr=>`<option ${journalFilters.trigger===tr?'selected':''}>${esc(tr)}</option>`).join("")}</select>
       <select id="jf_valid"><option value="">Framework Valid?</option><option value="valid" ${journalFilters.frameworkValid==='valid'?'selected':''}>Valid</option><option value="invalid" ${journalFilters.frameworkValid==='invalid'?'selected':''}>Invalid</option></select>
       <select id="jf_class"><option value="">Classification</option>${["GOOD WIN","GOOD LOSS","BAD WIN","BAD LOSS","BREAKEVEN","PENDING"].map(c=>`<option ${journalFilters.classification===c?'selected':''}>${c}</option>`).join("")}</select>
       <select id="jf_entryStyle"><option value="">Entry Style</option>${["Aggressive","Conservative","Unclassified"].map(s=>`<option ${journalFilters.entryStyle===s?'selected':''}>${s}</option>`).join("")}</select>
@@ -1607,7 +1906,7 @@ function renderJournal(main) {
         ${list.map(t => `
           <tr class="rowlink" data-id="${t.tradeId}">
             <td>${esc(t.date)}</td><td>${esc(resolveAccountName(t.accountId))}</td><td>${esc(t.session)}</td><td>${esc(t.instrument)}</td><td>${esc(t.direction)}</td>
-            <td>${esc(t.framework.bias)}</td><td style="white-space:normal;">${esc(t.framework.trigger)}</td>
+            <td>${esc(tradeBiasLabel(t))}</td><td style="white-space:normal;">${esc(tradeTriggerLabel(t))}</td>
             <td>${classificationBadge(t)}</td>
             <td class="${Number(t.management.finalR)>0?'pos':(Number(t.management.finalR)<0?'neg':'')}">${fmtR(t.management.finalR)}</td>
             <td class="${Number(t.management.finalPnL)>0?'pos':(Number(t.management.finalPnL)<0?'neg':'')}">${fmtCurrency(t.management.finalPnL)}</td>
@@ -1642,16 +1941,41 @@ function openTradeDetail(tradeId) {
   if (!t) return;
   const root = document.getElementById("modal-root");
   const shots = ["before","entry","after"].filter(k => t.screenshots[k]);
+
+  // Resolve checklist read-only views from the trade's OWN framework version config
+  // (falls back to active config, then legacy). Never rewrites the trade.
+  const cfg = configForTrade(t);
+  let confChecksHtml = '<div class="hint">—</div>';
+  let trigChecksHtml = '<div class="hint">—</div>';
+  if (cfg && t.framework.biasModelId) {
+    const m = findBiasModelInConfig(cfg, t.framework.biasModelId);
+    if (m) confChecksHtml = renderChecksReadonly(enabledChecklist(m), t.framework.confirmationChecks || {});
+  } else if (t.framework.confirmationChecks && Object.keys(t.framework.confirmationChecks).length) {
+    confChecksHtml = renderChecksReadonlyRaw(t.framework.confirmationChecks);
+  }
+  if (cfg && t.framework.triggerSessionId) {
+    const s = findTriggerSessionInConfig(cfg, t.framework.triggerSessionId);
+    if (s) trigChecksHtml = renderChecksReadonly(enabledChecklist(s), t.framework.triggerChecks || {});
+  } else if (t.framework.triggerChecks && Object.keys(t.framework.triggerChecks).length) {
+    trigChecksHtml = renderChecksReadonlyRaw(t.framework.triggerChecks);
+  }
+
+  // C2 Intraday research display (labels resolved via trade's version, POIs never flattened)
+  const c2 = t.c2Intraday || { whichPOI: [], whichTF: "", scenario: "" };
+  const poiText = (c2.whichPOI && c2.whichPOI.length) ? c2.whichPOI.map(id => esc(poiLabel(t, id))).join(", ") : "—";
+  const tfText = c2.whichTF ? esc(tfLabel(t, c2.whichTF)) : "—";
+  const scnText = c2.scenario ? esc(scenarioLabel(t, c2.scenario)) : "—";
+
   root.innerHTML = `
     <div class="modal-backdrop" id="detailBackdrop">
       <div class="modal">
-        <div class="modal-head"><h2>${esc(t.date)} · ${esc(t.instrument)} · ${esc(t.direction)}</h2><button class="close-x" id="closeDetail">&times;</button></div>
+        <div class="modal-head"><h2>${esc(t.date)} · ${esc(t.instrument)} · ${esc(t.direction)} <span class="pill ver">${esc(tradeVersionLabel(t))}</span></h2><button class="close-x" id="closeDetail">&times;</button></div>
         <div class="two-col">
           <div>
             <div class="kv"><span class="k">Account</span><span class="v">${esc(resolveAccountName(t.accountId))}</span></div>
             <div class="kv"><span class="k">Session</span><span class="v">${esc(t.session)}</span></div>
-            <div class="kv"><span class="k">Bias</span><span class="v">${esc(t.framework.bias)}</span></div>
-            <div class="kv"><span class="k">Trigger</span><span class="v">${esc(t.framework.trigger)}</span></div>
+            <div class="kv"><span class="k">Bias</span><span class="v">${esc(tradeBiasLabel(t))}</span></div>
+            <div class="kv"><span class="k">Trigger</span><span class="v">${esc(tradeTriggerLabel(t))}</span></div>
             <div class="kv"><span class="k">Market Condition</span><span class="v">${esc(t.marketContext.marketCondition)||'—'}</span></div>
             <div class="kv"><span class="k">Entry / SL / Target</span><span class="v">${esc(t.execution.entry)} / ${esc(t.execution.stopLoss)} / ${esc(t.execution.target)}</span></div>
             <div class="kv"><span class="k">Contracts</span><span class="v">${esc(t.execution.contracts)}</span></div>
@@ -1669,8 +1993,14 @@ function openTradeDetail(tradeId) {
           </div>
         </div>
         <div class="divider"></div>
-        <div><b>Confirmation checks</b><div class="framework-box" style="margin-top:6px;">${renderChecksReadonly(t.framework.bias ? FRAMEWORK.confirmations[t.framework.bias]?.checks : [], t.framework.confirmationChecks)}</div></div>
-        <div style="margin-top:12px;"><b>Trigger checks</b><div class="framework-box" style="margin-top:6px;">${renderChecksReadonly(FRAMEWORK.triggers.find(x=>x.label===t.framework.trigger)?.checks || [], t.framework.triggerChecks)}</div></div>
+        <div><b>C2 Intraday (research)</b>
+          <div class="kv"><span class="k">Which POI</span><span class="v">${poiText}</span></div>
+          <div class="kv"><span class="k">Which TF [C2 of C4]</span><span class="v">${tfText}</span></div>
+          <div class="kv"><span class="k">Intraday Scenario</span><span class="v">${scnText}</span></div>
+        </div>
+        <div class="divider"></div>
+        <div><b>Confirmation checks</b><div class="framework-box" style="margin-top:6px;">${confChecksHtml}</div></div>
+        <div style="margin-top:12px;"><b>Trigger checks</b><div class="framework-box" style="margin-top:6px;">${trigChecksHtml}</div></div>
         <div class="divider"></div>
         <div class="kv"><span class="k">Followed plan?</span><span class="v">${t.review.followedPlan===true?'YES':t.review.followedPlan===false?'NO':'—'}</span></div>
         <div class="kv"><span class="k">Valid setup?</span><span class="v">${t.review.validSetup===true?'YES':t.review.validSetup===false?'NO':'—'}</span></div>
@@ -1704,20 +2034,56 @@ function renderChecksReadonly(checks, values) {
   if (!checks || !checks.length) return '<div class="hint">—</div>';
   return checks.map(c => `<div class="check-row"><input type="checkbox" disabled ${values[c.id] ? 'checked' : ''}><label>${esc(c.label)}</label></div>`).join("");
 }
-
+// Fallback for legacy trades whose framework version config is unavailable:
+// show the raw stored check map so nothing historical is hidden.
+function renderChecksReadonlyRaw(values) {
+  const keys = Object.keys(values);
+  if (!keys.length) return '<div class="hint">—</div>';
+  return keys.map(k => `<div class="check-row"><input type="checkbox" disabled ${values[k] ? 'checked' : ''}><label>${esc(k)}</label></div>`).join("");
+}
 /* ---------------------------------------------------------------------
    11. ANALYTICS
+   ---------------------------------------------------------------------
+   PATCH: existing edge tables preserved verbatim. NEW research tables added
+   for the framework fields: Which POI (multi-select, exploded so a trade can
+   contribute to several POI groups — never flattened), C2 of C4 TF, Intraday
+   Scenario, and Framework Version. Multi-select POI is also available as an
+   Edge-Matrix dimension via a special exploded key.
    --------------------------------------------------------------------- */
 let edgeMatrixDims = ["bias", "session"];
 let analyticsAccountId = "";
 let analyticsEntryStyle = "";
 
-// Applies the Entry Style filter to an already account-filtered dataset.
-// "Unclassified" selects trades the trader has not classified (null).
 function applyEntryStyleFilter(list) {
   if (!analyticsEntryStyle) return list;
   if (analyticsEntryStyle === "Unclassified") return list.filter(t => !t.entryExecutionStyle);
   return list.filter(t => t.entryExecutionStyle === analyticsEntryStyle);
+}
+
+// POI is multi-select: build groups by exploding each trade into its POIs.
+// A trade with [FVG, SMT] contributes to BOTH the FVG group and the SMT group.
+function poiExplodedGroups(trades) {
+  const map = new Map(); // label -> trades[]
+  trades.forEach(t => {
+    const ids = (t.c2Intraday && Array.isArray(t.c2Intraday.whichPOI)) ? t.c2Intraday.whichPOI : [];
+    if (!ids.length) return;
+    ids.forEach(id => {
+      const label = poiLabel(t, id);
+      if (!map.has(label)) map.set(label, []);
+      map.get(label).push(t);
+    });
+  });
+  const out = [];
+  map.forEach((list, key) => out.push({ key, trades: list, stats: computeAggregateStats(list), sample: sampleSizeLabel(list.length) }));
+  return out;
+}
+// POI combination (exact set) — preserves research value of combinations like FVG+SMT.
+function poiComboGroups(trades) {
+  return groupTrades(trades, t => {
+    const ids = (t.c2Intraday && Array.isArray(t.c2Intraday.whichPOI)) ? t.c2Intraday.whichPOI.slice() : [];
+    if (!ids.length) return "";
+    return ids.map(id => poiLabel(t, id)).sort().join(" + ");
+  });
 }
 
 function renderAnalytics(main) {
@@ -1788,6 +2154,21 @@ function renderAnalytics(main) {
     <div class="section-title">Framework Valid vs Invalid</div>
     <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.frameworkValidity.fn), ["Valid","Invalid"])}</div>
 
+    <div class="section-title">Edge by C2 Intraday — Which POI <span class="hint">(multi-select exploded: a trade counts in each POI it had)</span></div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(poiExplodedGroups(aTrades))}</div>
+
+    <div class="section-title">Edge by C2 Intraday — POI Combination <span class="hint">(exact combination, e.g. FVG + SMT)</span></div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(poiComboGroups(aTrades))}</div>
+
+    <div class="section-title">Edge by C2 of C4 TF</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.c2TF.fn))}</div>
+
+    <div class="section-title">Edge by Intraday Scenario</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.c2Scenario.fn))}</div>
+
+    <div class="section-title">Edge by Framework Version</div>
+    <div class="card" style="padding:0;overflow-x:auto;">${edgeTable(groupTrades(aTrades, DIMENSIONS.frameworkVersion.fn))}</div>
+
     <div class="section-title">Entry Execution Style — Global <span class="hint">(research only — the system never recommends a style)</span></div>
     <div class="card" style="padding:0;overflow-x:auto;">${entryStyleTable(aTrades)}</div>
 
@@ -1799,6 +2180,7 @@ function renderAnalytics(main) {
       <div class="hint" style="margin-bottom:10px;">Combine dimensions to search for potential edges. Nothing here is labeled a confirmed "edge" — only a <b>Potential Edge</b>, and only once sample size is meaningful.</div>
       <div class="chip-group" id="matrixDims">
         ${Object.keys(DIMENSIONS).map(k => `<div class="chip ${edgeMatrixDims.includes(k)?'selected':''}" data-dim="${k}">${DIMENSIONS[k].label}</div>`).join("")}
+        <div class="chip ${edgeMatrixDims.includes('poi')?'selected':''}" data-dim="poi">Which POI (exploded)</div>
       </div>
       <div class="divider"></div>
       <div id="matrixResults"></div>
@@ -1840,11 +2222,6 @@ function edgeTable(groups, order) {
   </table>`;
 }
 
-/* ADD-ONLY: Entry Execution Style research tables.
-   Both renderers reuse the existing computeAggregateStats() and sampleSizeLabel()
-   helpers — no metric is recalculated or redefined here. Unclassified trades are
-   counted and shown, but are deliberately excluded from the Aggressive and
-   Conservative rows. Nothing here recommends a style; it only reports the data. */
 function entryStyleTable(trades) {
   const groups = [
     { key: "All Trades", trades: trades },
@@ -1863,7 +2240,6 @@ function entryStyleTable(trades) {
     ${groups.map(g => {
       const n = g.trades.length;
       if (!n) {
-        // Zero-sample group: show the count only, never fabricated statistics.
         return `<tr><td>${esc(g.key)}</td><td>0</td><td colspan="11" style="color:var(--text-faint);white-space:normal;">No classified trades</td></tr>`;
       }
       const s = computeAggregateStats(g.trades);
@@ -1889,8 +2265,6 @@ function entryStyleTable(trades) {
 }
 
 function triggerByEntryStyleTable(trades) {
-  // Trigger list comes from the data itself via the existing DIMENSIONS.trigger accessor,
-  // so every Trigger in the model — including any added later — appears automatically.
   const triggerGroups = groupTrades(trades, DIMENSIONS.trigger.fn);
   if (!triggerGroups.length) return '<div class="empty-state">No data yet.</div>';
   triggerGroups.sort((a, b) => String(a.key).localeCompare(String(b.key)));
@@ -1936,8 +2310,33 @@ function renderMatrixResults() {
   if (!area) return;
   if (!edgeMatrixDims.length) { area.innerHTML = '<div class="hint">Select 1–3 dimensions above.</div>'; return; }
   const matrixTrades = analyticsAccountId ? TRADES.filter(t => t.accountId === analyticsAccountId) : TRADES;
-  const keyFn = t => edgeMatrixDims.map(d => DIMENSIONS[d].fn(t) || "—").join(" × ");
-  const groups = groupTrades(matrixTrades, keyFn).sort((a, b) => b.stats.expectancy - a.stats.expectancy);
+
+  // Special handling when "poi" (multi-select) is among the chosen dimensions:
+  // explode across POIs so combinations are preserved without flattening.
+  const hasPoi = edgeMatrixDims.includes("poi");
+  const otherDims = edgeMatrixDims.filter(d => d !== "poi");
+
+  let groups;
+  if (hasPoi) {
+    const map = new Map();
+    matrixTrades.forEach(t => {
+      const ids = (t.c2Intraday && Array.isArray(t.c2Intraday.whichPOI)) ? t.c2Intraday.whichPOI : [];
+      if (!ids.length) return;
+      const otherKey = otherDims.map(d => DIMENSIONS[d].fn(t) || "—").join(" × ");
+      ids.forEach(id => {
+        const k = (otherDims.length ? otherKey + " × " : "") + "POI:" + poiLabel(t, id);
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(t);
+      });
+    });
+    groups = [];
+    map.forEach((list, key) => groups.push({ key, trades: list, stats: computeAggregateStats(list), sample: sampleSizeLabel(list.length) }));
+    groups.sort((a, b) => b.stats.expectancy - a.stats.expectancy);
+  } else {
+    const keyFn = t => edgeMatrixDims.map(d => DIMENSIONS[d].fn(t) || "—").join(" × ");
+    groups = groupTrades(matrixTrades, keyFn).sort((a, b) => b.stats.expectancy - a.stats.expectancy);
+  }
+
   if (!groups.length) { area.innerHTML = '<div class="empty-state">No matching data yet.</div>'; return; }
   area.innerHTML = groups.map(g => {
     const isUseful = g.trades.length >= 30;
@@ -1959,20 +2358,37 @@ function renderMatrixResults() {
     </div>`;
   }).join("");
 }
-
 /* ---------------------------------------------------------------------
-   12. REVIEW
+   12. REVIEW (weekly / periodic)
+   ---------------------------------------------------------------------
+   Preserved. Best/worst breakdowns use DIMENSIONS, which already resolve
+   framework labels across versions and for legacy trades.
    --------------------------------------------------------------------- */
-let reviewTab = "weekly";
 let reviewAccountId = "";
 function renderReview(main) {
+  const scoped = reviewAccountId ? TRADES.filter(t => t.accountId === reviewAccountId) : TRADES;
+
+  // Build week buckets (ISO week start Monday)
+  function weekKey(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    const day = (d.getDay() + 6) % 7; // Mon=0
+    d.setDate(d.getDate() - day);
+    return d.toISOString().slice(0, 10);
+  }
+  const weeks = groupTrades(scoped, t => weekKey(t.date));
+  weeks.sort((a, b) => b.key.localeCompare(a.key));
+
+  const bestBias = [...groupTrades(scoped, DIMENSIONS.bias.fn)].sort((a, b) => b.stats.expectancy - a.stats.expectancy)[0];
+  const worstBias = [...groupTrades(scoped, DIMENSIONS.bias.fn)].sort((a, b) => a.stats.expectancy - b.stats.expectancy)[0];
+  const bestTrigger = [...groupTrades(scoped, DIMENSIONS.trigger.fn)].sort((a, b) => b.stats.expectancy - a.stats.expectancy)[0];
+
   main.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
       <div>
         <h1 class="page-title">Review</h1>
-        <p class="page-sub">Turn history into decisions — never automatic changes to the Framework.</p>
+        <p class="page-sub">Periodic reflection — process over outcome.</p>
       </div>
-      <div class="field" style="min-width:200px;margin-bottom:0;">
+      <div class="field" style="min-width:190px;margin-bottom:0;">
         <label>Account</label>
         <select id="reviewAccountFilter">
           <option value="">All Accounts</option>
@@ -1980,213 +2396,108 @@ function renderReview(main) {
         </select>
       </div>
     </div>
-    <div class="tabs" id="reviewTabs">
-      <div class="tab ${reviewTab==='daily'?'active':''}" data-t="daily">Daily</div>
-      <div class="tab ${reviewTab==='weekly'?'active':''}" data-t="weekly">Weekly</div>
-      <div class="tab ${reviewTab==='monthly'?'active':''}" data-t="monthly">Monthly</div>
+
+    <div class="grid grid-3">
+      <div class="card"><div class="stat-label">Best Bias (by expectancy)</div><div style="font-family:var(--mono);margin-top:6px;">${bestBias ? esc(bestBias.key) + " · " + fmtR(bestBias.stats.expectancy) : "—"}</div></div>
+      <div class="card"><div class="stat-label">Weakest Bias</div><div style="font-family:var(--mono);margin-top:6px;">${worstBias ? esc(worstBias.key) + " · " + fmtR(worstBias.stats.expectancy) : "—"}</div></div>
+      <div class="card"><div class="stat-label">Best Trigger</div><div style="font-family:var(--mono);margin-top:6px;">${bestTrigger ? esc(bestTrigger.key) + " · " + fmtR(bestTrigger.stats.expectancy) : "—"}</div></div>
     </div>
-    <div id="reviewBody"></div>
+
+    <div class="section-title">Weekly Breakdown</div>
+    <div class="card" style="padding:0;overflow-x:auto;">
+      ${weeks.length === 0 ? '<div class="empty-state">No trades to review yet.</div>' : `
+      <table>
+        <thead><tr><th>Week of</th><th>Trades</th><th>Win Rate</th><th>Net R</th><th>Expectancy</th><th>Avg Execution</th><th>Framework Compliance</th></tr></thead>
+        <tbody>
+        ${weeks.map(w => `
+          <tr>
+            <td>${esc(w.key)}</td>
+            <td>${w.trades.length}</td>
+            <td>${fmtPct(w.stats.winRate)}</td>
+            <td class="${w.stats.netR>=0?'pos':'neg'}">${fmtR(w.stats.netR)}</td>
+            <td class="${w.stats.expectancy>=0?'pos':'neg'}">${fmtR(w.stats.expectancy)}</td>
+            <td>${fmtNum(w.stats.avgExecution,1)}</td>
+            <td>${fmtPct(w.stats.frameworkCompliance)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`}
+    </div>
+
+    <div class="section-title">Reflection Prompts</div>
+    <div class="card">
+      <ul style="margin:0;padding-left:18px;color:var(--text-dim);font-size:13px;line-height:1.9;">
+        <li>Did I follow my process regardless of outcome?</li>
+        <li>Which mistakes repeated this period?</li>
+        <li>Where was my execution weakest (context / framework / entry / risk / management)?</li>
+        <li>Did any emotional state precede my worst trades?</li>
+        <li>What single adjustment would most improve next period?</li>
+      </ul>
+    </div>
   `;
-  document.querySelectorAll("#reviewTabs .tab").forEach(tabEl => {
-    tabEl.onclick = () => { reviewTab = tabEl.dataset.t; renderReview(main); };
-  });
   document.getElementById("reviewAccountFilter").onchange = e => { reviewAccountId = e.target.value; renderReview(main); };
-  const body = document.getElementById("reviewBody");
-  if (reviewTab === "daily") renderPeriodReview(body, "daily");
-  else if (reviewTab === "weekly") renderPeriodReview(body, "weekly");
-  else renderPeriodReview(body, "monthly");
-}
-
-function periodBounds(period) {
-  const now = new Date();
-  let start;
-  if (period === "daily") { start = new Date(now); start.setHours(0,0,0,0); }
-  else if (period === "weekly") { start = new Date(now); const day = start.getDay(); const diff = (day === 0 ? -6 : 1) - day; start.setDate(start.getDate() + diff); start.setHours(0,0,0,0); }
-  else { start = new Date(now.getFullYear(), now.getMonth(), 1); }
-  return { start: start.toISOString().slice(0,10), end: todayISO() };
-}
-
-function renderPeriodReview(body, period) {
-  const { start, end } = periodBounds(period);
-  const scoped = reviewAccountId ? TRADES.filter(t => t.accountId === reviewAccountId) : TRADES;
-  const inPeriod = scoped.filter(t => t.date >= start && t.date <= end);
-  const stats = computeAggregateStats(inPeriod);
-  const ruleBreaks = inPeriod.filter(t => t.executionReview.ruleBreak === "YES").length;
-
-  const bestWorst = (dim) => {
-    const groups = groupTrades(inPeriod, DIMENSIONS[dim].fn).filter(g => g.trades.length >= 1);
-    if (!groups.length) return { best: null, worst: null };
-    const sorted = [...groups].sort((a,b) => b.stats.expectancy - a.stats.expectancy);
-    return { best: sorted[0], worst: sorted[sorted.length - 1] };
-  };
-  const biasBW = bestWorst("bias"), triggerBW = bestWorst("trigger"), sessionBW = bestWorst("session"), mcBW = bestWorst("marketCondition");
-
-  const pastReviews = REVIEWS.filter(r => r.period === period).sort((a,b) => b.savedAt.localeCompare(a.savedAt));
-
-  body.innerHTML = `
-    <div class="card">
-      <div class="hint" style="margin-bottom:10px;">Period: ${esc(start)} → ${esc(end)}</div>
-      <div class="grid grid-4">
-        <div class="kv"><span class="k">Total Trades</span><span class="v">${stats.totalTrades}</span></div>
-        <div class="kv"><span class="k">Net P&amp;L</span><span class="v">${fmtCurrency(stats.netPnL)}</span></div>
-        <div class="kv"><span class="k">Net R</span><span class="v">${fmtR(stats.netR)}</span></div>
-        <div class="kv"><span class="k">Win Rate</span><span class="v">${fmtPct(stats.winRate)}</span></div>
-        <div class="kv"><span class="k">Avg Win / Loss (R)</span><span class="v">${fmtR(stats.avgWinR)} / -${fmtNum(stats.avgLossR)}R</span></div>
-        <div class="kv"><span class="k">Expectancy</span><span class="v">${fmtR(stats.expectancy)}</span></div>
-        <div class="kv"><span class="k">Profit Factor</span><span class="v">${fmtPF(stats.profitFactor)}</span></div>
-        <div class="kv"><span class="k">Max Drawdown (R)</span><span class="v">${fmtNum(stats.maxDrawdownR)}R</span></div>
-        <div class="kv"><span class="k">Avg Execution</span><span class="v">${fmtNum(stats.avgExecution,1)}</span></div>
-        <div class="kv"><span class="k">Framework Compliance</span><span class="v">${fmtPct(stats.frameworkCompliance)}</span></div>
-        <div class="kv"><span class="k">Rule Breaks</span><span class="v">${ruleBreaks}</span></div>
-      </div>
-    </div>
-
-    <div class="section-title">Best Historical Performance <span class="hint">(not a prediction)</span></div>
-    <div class="grid grid-2">
-      <div class="card">
-        <div class="kv"><span class="k">Best Bias</span><span class="v">${biasBW.best ? esc(biasBW.best.key) : '—'}</span></div>
-        <div class="kv"><span class="k">Best Trigger</span><span class="v">${triggerBW.best ? esc(triggerBW.best.key) : '—'}</span></div>
-        <div class="kv"><span class="k">Best Session</span><span class="v">${sessionBW.best ? esc(sessionBW.best.key) : '—'}</span></div>
-        <div class="kv"><span class="k">Best Market Condition</span><span class="v">${mcBW.best ? esc(mcBW.best.key) : '—'}</span></div>
-      </div>
-      <div class="card">
-        <div class="kv"><span class="k">Worst Bias</span><span class="v">${biasBW.worst ? esc(biasBW.worst.key) : '—'}</span></div>
-        <div class="kv"><span class="k">Worst Trigger</span><span class="v">${triggerBW.worst ? esc(triggerBW.worst.key) : '—'}</span></div>
-        <div class="kv"><span class="k">Worst Session</span><span class="v">${sessionBW.worst ? esc(sessionBW.worst.key) : '—'}</span></div>
-        <div class="kv"><span class="k">Worst Market Condition</span><span class="v">${mcBW.worst ? esc(mcBW.worst.key) : '—'}</span></div>
-      </div>
-    </div>
-    <div class="hint" style="margin-top:8px;">Findings are informational. The system never auto-modifies your Framework — you decide whether to keep, modify, backtest, or remove anything.</div>
-
-    <div class="section-title">${period.charAt(0).toUpperCase()+period.slice(1)} Reflection</div>
-    <div class="card">
-      <div class="field"><label>What worked?</label><textarea id="rv_worked"></textarea></div>
-      <div class="field"><label>What failed?</label><textarea id="rv_failed"></textarea></div>
-      <div class="field"><label>What did I learn?</label><textarea id="rv_learned"></textarea></div>
-      <div class="field"><label>What will I change next ${period === 'daily' ? 'day' : period === 'weekly' ? 'week' : 'month'}?</label><textarea id="rv_change"></textarea></div>
-      <button class="btn primary" id="saveReviewBtn">Save ${period.charAt(0).toUpperCase()+period.slice(1)} Review</button>
-    </div>
-
-    ${pastReviews.length ? `
-    <div class="section-title">Saved Reviews</div>
-    ${pastReviews.map(r => `
-      <div class="card" style="margin-bottom:10px;">
-        <div class="hint">${esc(r.start)} → ${esc(r.end)} · saved ${new Date(r.savedAt).toLocaleString()}</div>
-        <p><b>Worked:</b> ${esc(r.worked)||'—'}</p>
-        <p><b>Failed:</b> ${esc(r.failed)||'—'}</p>
-        <p><b>Learned:</b> ${esc(r.learned)||'—'}</p>
-        <p><b>Change:</b> ${esc(r.change)||'—'}</p>
-      </div>
-    `).join("")}` : ""}
-  `;
-
-  document.getElementById("saveReviewBtn").onclick = async () => {
-    const review = {
-      id: uuid(), period, start, end, savedAt: new Date().toISOString(),
-      worked: document.getElementById("rv_worked").value,
-      failed: document.getElementById("rv_failed").value,
-      learned: document.getElementById("rv_learned").value,
-      change: document.getElementById("rv_change").value,
-      stats
-    };
-    await idbPut("weeklyReviews", review);
-    REVIEWS.push(review);
-    toast("Review saved.");
-    renderReview(document.getElementById("main-content"));
-  };
 }
 
 /* ---------------------------------------------------------------------
    13. PLAYBOOK
+   ---------------------------------------------------------------------
+   Preserved. The bias/trigger reference dropdowns are now populated from
+   the ACTIVE framework configuration (so they stay in sync with the models
+   the trader actually uses) instead of the old hard-coded lists.
    --------------------------------------------------------------------- */
 function renderPlaybook(main) {
   main.innerHTML = `
-    <h1 class="page-title">Playbook</h1>
-    <p class="page-sub">Turn discovered patterns back into a repeatable plan — this never alters your raw Journal data.</p>
-    <button class="btn primary" id="newPlaybookBtn" style="margin-bottom:16px;">+ New Setup</button>
-    <div id="playbookList" class="grid grid-2"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h1 class="page-title">Playbook</h1>
+        <p class="page-sub">Your defined setups — the only trades worth taking.</p>
+      </div>
+      <button class="btn primary" id="addPlaybook">+ New Setup</button>
+    </div>
+    <div id="playbookList" class="grid grid-2" style="margin-top:16px;"></div>
   `;
-  document.getElementById("newPlaybookBtn").onclick = () => openPlaybookEditor(null);
+  document.getElementById("addPlaybook").onclick = () => openPlaybookEditor(null);
   renderPlaybookList();
 }
 function renderPlaybookList() {
   const list = document.getElementById("playbookList");
-  const active = PLAYBOOKS.filter(p => !p.archived);
-  const archived = PLAYBOOKS.filter(p => p.archived);
-  if (!PLAYBOOKS.length) { list.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">No playbook setups yet. Discover a pattern in Analytics, then codify it here.</div>'; return; }
-  list.innerHTML = [...active, ...archived].map(p => `
-    <div class="card" style="opacity:${p.archived ? 0.55 : 1};">
+  if (!PLAYBOOKS.length) { list.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="big">No setups defined yet.</div>A setup you can\'t describe is a setup you can\'t trade.</div>'; return; }
+  list.innerHTML = PLAYBOOKS.map(p => `
+    <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div>
-          <div style="font-weight:600;font-size:14.5px;">${esc(p.setupName)} ${p.archived ? '<span class="hint">(archived)</span>' : ''}</div>
-          <div class="hint">${esc(p.bias)} · ${esc(p.trigger)}</div>
-        </div>
+        <div style="font-weight:600;font-size:14px;">${esc(p.name)}</div>
         <div style="display:flex;gap:6px;">
-          <button class="btn sm" data-act="edit" data-id="${p.id}">Edit</button>
-          <button class="btn sm" data-act="dup" data-id="${p.id}">Duplicate</button>
-          <button class="btn sm" data-act="arch" data-id="${p.id}">${p.archived ? 'Unarchive' : 'Archive'}</button>
+          <button class="btn sm" data-edit="${p.id}">Edit</button>
+          <button class="btn sm danger" data-del="${p.id}">Delete</button>
         </div>
       </div>
-      <div class="divider"></div>
-      <p style="font-size:12.5px;color:var(--text-dim);">${esc(p.description) || '—'}</p>
-      <div class="grid grid-3">
-        <div class="kv"><span class="k">Best Session</span><span class="v">${esc(p.bestSession)||'—'}</span></div>
-        <div class="kv"><span class="k">Best Day</span><span class="v">${esc(p.bestDay)||'—'}</span></div>
-        <div class="kv"><span class="k">Sample</span><span class="v">${esc(p.sampleSize)||'—'}</span></div>
-        <div class="kv"><span class="k">Win Rate</span><span class="v">${esc(p.winRate)||'—'}</span></div>
-        <div class="kv"><span class="k">Expectancy</span><span class="v">${esc(p.expectancy)||'—'}</span></div>
-        <div class="kv"><span class="k">Best Condition</span><span class="v">${esc(p.bestMarketCondition)||'—'}</span></div>
-      </div>
+      <div style="font-size:12px;color:var(--text-faint);margin-top:4px;font-family:var(--mono);">${esc(p.bias||'—')} · ${esc(p.trigger||'—')} · ${esc(p.session||'—')}</div>
+      <p style="font-size:13px;color:var(--text-dim);margin:10px 0 0;">${esc(p.description||'')}</p>
+      ${p.conditions && p.conditions.length ? `<ul style="margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--text-dim);">${p.conditions.map(c => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
     </div>
   `).join("");
-  list.querySelectorAll("button[data-act]").forEach(btn => {
-    btn.onclick = async () => {
-      const p = PLAYBOOKS.find(x => x.id === btn.dataset.id);
-      if (btn.dataset.act === "edit") openPlaybookEditor(p);
-      else if (btn.dataset.act === "dup") {
-        const copy = JSON.parse(JSON.stringify(p)); copy.id = uuid(); copy.setupName += " (copy)"; copy.archived = false;
-        await idbPut("playbook", copy); PLAYBOOKS.push(copy); renderPlaybookList();
-      } else if (btn.dataset.act === "arch") {
-        p.archived = !p.archived; await idbPut("playbook", p); renderPlaybookList();
-      }
-    };
+  list.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openPlaybookEditor(b.dataset.edit));
+  list.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    if (confirm("Delete this setup?")) { await idbDelete("playbook", b.dataset.del); PLAYBOOKS = PLAYBOOKS.filter(x => x.id !== b.dataset.del); renderPlaybookList(); }
   });
 }
-function openPlaybookEditor(p) {
-  const editing = !!p;
-  const draft = p ? JSON.parse(JSON.stringify(p)) : {
-    id: uuid(), setupName: "", bias: "", confirmation: "", trigger: "", entryModel: "", riskModel: "",
-    managementModel: "", invalidation: "", bestHistoricalConditions: "", historicalStatistics: "",
-    notes: "", bestSession: "", bestDay: "", bestMarketCondition: "", sampleSize: "", expectancy: "", winRate: "", archived: false
-  };
+function openPlaybookEditor(id) {
+  const p = id ? JSON.parse(JSON.stringify(PLAYBOOKS.find(x => x.id === id))) : { id: "pb_" + uuid(), name: "", bias: "", trigger: "", session: "", description: "", conditions: [], createdAt: new Date().toISOString() };
   const root = document.getElementById("modal-root");
+  const biasNames = activeConfig().biasModels.map(m => m.name);
+  const triggerNames = activeConfig().triggerSessions.map(s => s.name);
   root.innerHTML = `
     <div class="modal-backdrop" id="pbBackdrop">
       <div class="modal">
-        <div class="modal-head"><h2>${editing ? 'Edit Setup' : 'New Setup'}</h2><button class="close-x" id="pbClose">&times;</button></div>
-        <div class="grid grid-2">
-          <div class="field"><label>Setup Name</label><input type="text" id="pb_name" value="${esc(draft.setupName)}"></div>
-          <div class="field"><label>Bias</label><select id="pb_bias"><option value=""></option>${FRAMEWORK.biasOptions.map(b=>`<option ${draft.bias===b?'selected':''}>${esc(b)}</option>`).join("")}</select></div>
-          <div class="field"><label>Confirmation</label><input type="text" id="pb_conf" value="${esc(draft.confirmation)}"></div>
-          <div class="field"><label>Trigger</label><select id="pb_trigger"><option value=""></option>${FRAMEWORK.triggers.map(t=>`<option ${draft.trigger===t.label?'selected':''}>${esc(t.label)}</option>`).join("")}</select></div>
-          <div class="field"><label>Entry Model</label><input type="text" id="pb_entry" value="${esc(draft.entryModel)}"></div>
-          <div class="field"><label>Risk Model</label><input type="text" id="pb_risk" value="${esc(draft.riskModel)}"></div>
-          <div class="field"><label>Management Model</label><input type="text" id="pb_mgmt" value="${esc(draft.managementModel)}"></div>
-          <div class="field"><label>Invalidation</label><input type="text" id="pb_invalid" value="${esc(draft.invalidation)}"></div>
-          <div class="field"><label>Best Session</label><select id="pb_bestSession"><option value=""></option>${SESSIONS.map(s=>`<option ${draft.bestSession===s?'selected':''}>${s}</option>`).join("")}</select></div>
-          <div class="field"><label>Best Day</label><select id="pb_bestDay"><option value=""></option>${["Monday","Tuesday","Wednesday","Thursday","Friday"].map(d=>`<option ${draft.bestDay===d?'selected':''}>${d}</option>`).join("")}</select></div>
-          <div class="field"><label>Best Market Condition</label><select id="pb_bestCond"><option value=""></option>${MARKET_CONDITIONS.map(m=>`<option ${draft.bestMarketCondition===m?'selected':''}>${m}</option>`).join("")}</select></div>
-          <div class="field"><label>Sample Size</label><input type="text" id="pb_sample" value="${esc(draft.sampleSize)}"></div>
-          <div class="field"><label>Win Rate</label><input type="text" id="pb_winrate" value="${esc(draft.winRate)}"></div>
-          <div class="field"><label>Expectancy</label><input type="text" id="pb_expectancy" value="${esc(draft.expectancy)}"></div>
+        <div class="modal-head"><h2>${id ? "Edit" : "New"} Setup</h2><button class="close-x" id="pbClose">&times;</button></div>
+        <div class="field"><label>Setup Name</label><input type="text" id="pb_name" value="${esc(p.name)}"></div>
+        <div class="grid grid-3">
+          <div class="field"><label>Bias</label><select id="pb_bias"><option value=""></option>${biasNames.map(b => `<option ${p.bias===b?'selected':''}>${esc(b)}</option>`).join("")}</select></div>
+          <div class="field"><label>Trigger</label><select id="pb_trigger"><option value=""></option>${triggerNames.map(tr => `<option ${p.trigger===tr?'selected':''}>${esc(tr)}</option>`).join("")}</select></div>
+          <div class="field"><label>Session</label><select id="pb_session"><option value=""></option>${SESSIONS.map(s => `<option ${p.session===s?'selected':''}>${s}</option>`).join("")}</select></div>
         </div>
-        <div class="field"><label>Description</label><textarea id="pb_description">${esc(draft.description||'')}</textarea></div>
-        <div class="field"><label>Historical Statistics (free text)</label><textarea id="pb_histstats">${esc(draft.historicalStatistics)}</textarea></div>
-        <div class="field"><label>Notes</label><textarea id="pb_notes">${esc(draft.notes)}</textarea></div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;">
-          <button class="btn" id="pbCancel">Cancel</button>
-          <button class="btn primary" id="pbSave">Save Setup</button>
-        </div>
+        <div class="field"><label>Description</label><textarea id="pb_desc">${esc(p.description)}</textarea></div>
+        <div class="field"><label>Entry Conditions (one per line)</label><textarea id="pb_conditions">${esc((p.conditions||[]).join("\n"))}</textarea></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;"><button class="btn" id="pbCancel">Cancel</button><button class="btn primary" id="pbSave">Save Setup</button></div>
       </div>
     </div>
   `;
@@ -2195,302 +2506,124 @@ function openPlaybookEditor(p) {
   document.getElementById("pbCancel").onclick = close;
   document.getElementById("pbBackdrop").onclick = e => { if (e.target.id === "pbBackdrop") close(); };
   document.getElementById("pbSave").onclick = async () => {
-    draft.setupName = document.getElementById("pb_name").value;
-    draft.bias = document.getElementById("pb_bias").value;
-    draft.confirmation = document.getElementById("pb_conf").value;
-    draft.trigger = document.getElementById("pb_trigger").value;
-    draft.entryModel = document.getElementById("pb_entry").value;
-    draft.riskModel = document.getElementById("pb_risk").value;
-    draft.managementModel = document.getElementById("pb_mgmt").value;
-    draft.invalidation = document.getElementById("pb_invalid").value;
-    draft.bestSession = document.getElementById("pb_bestSession").value;
-    draft.bestDay = document.getElementById("pb_bestDay").value;
-    draft.bestMarketCondition = document.getElementById("pb_bestCond").value;
-    draft.sampleSize = document.getElementById("pb_sample").value;
-    draft.winRate = document.getElementById("pb_winrate").value;
-    draft.expectancy = document.getElementById("pb_expectancy").value;
-    draft.description = document.getElementById("pb_description").value;
-    draft.historicalStatistics = document.getElementById("pb_histstats").value;
-    draft.notes = document.getElementById("pb_notes").value;
-    await idbPut("playbook", draft);
-    const idx = PLAYBOOKS.findIndex(x => x.id === draft.id);
-    if (idx >= 0) PLAYBOOKS[idx] = draft; else PLAYBOOKS.push(draft);
-    close();
-    renderPlaybookList();
-    toast("Setup saved to Playbook.");
+    p.name = document.getElementById("pb_name").value.trim() || "Untitled Setup";
+    p.bias = document.getElementById("pb_bias").value;
+    p.trigger = document.getElementById("pb_trigger").value;
+    p.session = document.getElementById("pb_session").value;
+    p.description = document.getElementById("pb_desc").value;
+    p.conditions = document.getElementById("pb_conditions").value.split("\n").map(s => s.trim()).filter(Boolean);
+    await idbPut("playbook", p);
+    const idx = PLAYBOOKS.findIndex(x => x.id === p.id);
+    if (idx >= 0) PLAYBOOKS[idx] = p; else PLAYBOOKS.push(p);
+    close(); renderPlaybookList(); toast("Setup saved.");
   };
 }
-
 /* ---------------------------------------------------------------------
-   14. SETTINGS
+   14. SETTINGS (+ Accounts, Framework editor entry, Import/Export)
+   ---------------------------------------------------------------------
+   PATCH: adds a "Framework" section (the Configuration Editor, section 14b)
+   without adding a nav route. Import/Export now round-trips the framework
+   store (versions + active pointer) with de-duplication on import.
    --------------------------------------------------------------------- */
+let settingsTab = "account";
 function renderSettings(main) {
-  const s = SETTINGS;
   main.innerHTML = `
     <h1 class="page-title">Settings</h1>
-    <p class="page-sub">All account and prop-firm parameters are editable — nothing is hard-coded.</p>
+    <p class="page-sub">Configure accounts, framework, risk, display, and your data.</p>
+    <div class="tabs" id="settingsTabs">
+      ${[["account","Account & Journal"],["accounts","Accounts"],["framework","Framework"],["risk","Risk Control"],["display","Display"],["data","Data"]]
+        .map(([k,l]) => `<div class="tab ${settingsTab===k?'active':''}" data-tab="${k}">${l}</div>`).join("")}
+    </div>
+    <div id="settingsBody"></div>
+  `;
+  document.querySelectorAll("#settingsTabs .tab").forEach(t => t.onclick = () => { settingsTab = t.dataset.tab; renderSettings(main); });
+  const body = document.getElementById("settingsBody");
+  if (settingsTab === "account") renderSettingsAccount(body);
+  else if (settingsTab === "accounts") renderSettingsAccounts(body);
+  else if (settingsTab === "framework") renderFrameworkEditor(body);
+  else if (settingsTab === "risk") renderSettingsRisk(body);
+  else if (settingsTab === "display") renderSettingsDisplay(body);
+  else if (settingsTab === "data") renderSettingsData(body);
+}
 
-    <div class="section-title" style="margin-top:0;">Accounts</div>
+function renderSettingsAccount(body) {
+  const s = SETTINGS;
+  body.innerHTML = `
     <div class="card">
-      <div id="accountsList"></div>
-      <button class="btn primary" id="addAccountBtn" style="margin-top:10px;">+ Add Account</button>
-      <p class="hint" style="margin-top:10px;">Every Trade belongs to one Account. Dashboard, Journal, Analytics, Edge Matrix, and Review can all be filtered by Account or viewed across all Accounts. All Accounts share the same Framework, Bias, Confirmation, and Trigger definitions.</p>
-    </div>
-
-    <div class="section-title">Legacy Account Defaults <span class="hint">(kept for backward compatibility — no longer used by Dashboard; manage real Accounts above)</span></div>
-    <div class="card grid grid-3">
-      <div class="field"><label>Account Name</label><input type="text" id="s_accountName" value="${esc(s.account.accountName)}"></div>
-      <div class="field"><label>Account Size ($)</label><input type="number" id="s_accountSize" value="${s.account.accountSize}"></div>
-      <div class="field"><label>Starting Balance ($)</label><input type="number" id="s_startingBalance" value="${s.account.startingBalance}"></div>
-      <div class="field"><label>Profit Target ($)</label><input type="number" id="s_profitTarget" value="${s.account.profitTarget}"></div>
-      <div class="field"><label>Max Drawdown ($)</label><input type="number" id="s_maxDrawdown" value="${s.account.maxDrawdown}"></div>
-      <div class="field"><label>Daily Loss Limit ($)</label><input type="number" id="s_dailyLossLimit" value="${s.account.dailyLossLimit}"></div>
-      <div class="field"><label>Risk Per Trade (%)</label><input type="number" step="any" id="s_riskPerTrade" value="${s.account.riskPerTrade}"></div>
-      <div class="field"><label>Default Contract</label><input type="text" id="s_defaultContract" value="${esc(s.account.defaultContract)}"></div>
-      <div class="field"><label>Default Instrument</label><input type="text" id="s_defaultInstrument" value="${esc(s.account.defaultInstrument)}"></div>
-    </div>
-
-    <div class="section-title">Journal Settings</div>
-    <div class="card grid grid-3">
-      <div class="field"><label>Default Session</label><select id="j_defaultSession">${SESSIONS.map(sess=>`<option ${s.journal.defaultSession===sess?'selected':''}>${sess}</option>`).join("")}</select></div>
-      <div class="field"><label>Default Instrument</label><input type="text" id="j_defaultInstrument" value="${esc(s.journal.defaultInstrument)}"></div>
-      <div class="field"><label>Default Risk ($)</label><input type="number" id="j_defaultRisk" value="${s.journal.defaultRisk}"></div>
-      <div class="field"><label>Default R:R</label><input type="number" step="any" id="j_defaultRR" value="${s.journal.defaultRR}"></div>
-      <div class="field"><label>Default Point Value ($/pt)</label><input type="number" step="any" id="j_pointValue" value="${s.journal.pointValue}"></div>
-      <div class="field"><label>Good Execution Threshold (score ≥)</label><input type="number" min="0" max="100" id="j_goodThreshold" value="${s.goodExecutionThreshold}"></div>
-    </div>
-
-    <div class="section-title">Risk Warnings</div>
-    <div class="card grid grid-3">
-      <div class="field"><label>Enforce Max Risk Warning</label><select id="r_enforce"><option value="0" ${!s.riskControl.enforceMaxRisk?'selected':''}>Off</option><option value="1" ${s.riskControl.enforceMaxRisk?'selected':''}>On</option></select></div>
-      <div class="field"><label>Maximum Risk ($)</label><input type="number" id="r_maxRisk" value="${s.riskControl.maxRiskAmount}"></div>
-      <div class="hint" style="align-self:center;">Warnings never block saving unless you decide to stop manually.</div>
-    </div>
-
-    <div class="section-title">Display</div>
-    <div class="card grid grid-3">
-      <div class="field"><label>Theme</label><select id="d_theme"><option value="dark" ${s.display.theme==='dark'?'selected':''}>Dark</option><option value="light" ${s.display.theme==='light'?'selected':''}>Light</option></select></div>
-      <div class="field"><label>Compact Mode</label><select id="d_compact"><option value="0" ${!s.display.compact?'selected':''}>Off</option><option value="1" ${s.display.compact?'selected':''}>On</option></select></div>
-    </div>
-
-    <button class="btn primary" id="saveSettingsBtn" style="margin:16px 0 30px 0;">Save Settings</button>
-
-    <div class="section-title" style="margin-top:0;">Data</div>
-    <div class="card">
-      <div style="display:flex;flex-wrap:wrap;gap:10px;">
-        <button class="btn" id="exportJsonBtn">Export JSON</button>
-        <label class="btn" style="cursor:pointer;">Import / Merge JSON<input type="file" id="importJsonInput" accept="application/json" style="display:none;"></label>
-        <button class="btn" id="exportCsvBtn">Export CSV</button>
-        <button class="btn" id="backupBtn">Backup Data</button>
-        <label class="btn" style="cursor:pointer;">Restore Data (Replace All)<input type="file" id="restoreInput" accept="application/json" style="display:none;"></label>
-        <button class="btn" id="loadDemoBtn">Load Demo Data</button>
-        <button class="btn" id="removeDemoBtn">Remove Demo Data</button>
-        <button class="btn danger" id="deleteAllBtn">Delete All Data</button>
+      <div class="section-title" style="margin-top:0;">Journal Defaults</div>
+      <div class="grid grid-3">
+        <div class="field"><label>Default Session</label><select id="s_session">${SESSIONS.map(x => `<option ${s.journal.defaultSession===x?'selected':''}>${x}</option>`).join("")}</select></div>
+        <div class="field"><label>Default Instrument</label><input type="text" id="s_instrument" value="${esc(s.journal.defaultInstrument)}"></div>
+        <div class="field"><label>Default Point Value</label><input type="number" step="any" id="s_pointValue" value="${s.journal.pointValue}"></div>
       </div>
-      <p class="hint" style="margin-top:12px;">Everything is stored locally in this browser via IndexedDB. Export regularly if you want a portable backup or plan to switch devices/browsers.</p>
+      <div class="field"><label>Good Execution Threshold (score ≥ counts as good process)</label><input type="number" id="s_goodThreshold" value="${s.goodExecutionThreshold}"></div>
+      <button class="btn primary" id="saveAccountSettings">Save</button>
     </div>
   `;
-
-  document.getElementById("saveSettingsBtn").onclick = async () => {
-    s.account.accountName = document.getElementById("s_accountName").value;
-    s.account.accountSize = Number(document.getElementById("s_accountSize").value) || 0;
-    s.account.startingBalance = Number(document.getElementById("s_startingBalance").value) || 0;
-    s.account.profitTarget = Number(document.getElementById("s_profitTarget").value) || 0;
-    s.account.maxDrawdown = Number(document.getElementById("s_maxDrawdown").value) || 0;
-    s.account.dailyLossLimit = Number(document.getElementById("s_dailyLossLimit").value) || 0;
-    s.account.riskPerTrade = Number(document.getElementById("s_riskPerTrade").value) || 0;
-    s.account.defaultContract = document.getElementById("s_defaultContract").value;
-    s.account.defaultInstrument = document.getElementById("s_defaultInstrument").value;
-    s.journal.defaultSession = document.getElementById("j_defaultSession").value;
-    s.journal.defaultInstrument = document.getElementById("j_defaultInstrument").value;
-    s.journal.defaultRisk = Number(document.getElementById("j_defaultRisk").value) || 0;
-    s.journal.defaultRR = Number(document.getElementById("j_defaultRR").value) || 0;
-    s.journal.pointValue = Number(document.getElementById("j_pointValue").value) || 1;
-    s.goodExecutionThreshold = Number(document.getElementById("j_goodThreshold").value) || 70;
-    s.riskControl.enforceMaxRisk = document.getElementById("r_enforce").value === "1";
-    s.riskControl.maxRiskAmount = Number(document.getElementById("r_maxRisk").value) || 0;
-    s.display.theme = document.getElementById("d_theme").value;
-    s.display.compact = document.getElementById("d_compact").value === "1";
+  document.getElementById("saveAccountSettings").onclick = async () => {
+    s.journal.defaultSession = document.getElementById("s_session").value;
+    s.journal.defaultInstrument = document.getElementById("s_instrument").value;
+    s.journal.pointValue = Number(document.getElementById("s_pointValue").value) || 1;
+    s.goodExecutionThreshold = Number(document.getElementById("s_goodThreshold").value) || 70;
     s.updatedAt = new Date().toISOString();
     await idbPut("kv", s);
-    applyDisplaySettings();
     toast("Settings saved.");
   };
-
-  renderAccountsList();
-  document.getElementById("addAccountBtn").onclick = () => openAccountEditor(null);
-
-  document.getElementById("exportJsonBtn").onclick = () => {
-    const data = { formatVersion: 2, accounts: ACCOUNTS, trades: TRADES, playbook: PLAYBOOKS, weeklyReviews: REVIEWS, settings: SETTINGS, exportedAt: new Date().toISOString() };
-    downloadFile("trading-journal-export-" + todayISO() + ".json", JSON.stringify(data, null, 2), "application/json");
-  };
-  document.getElementById("backupBtn").onclick = () => document.getElementById("exportJsonBtn").click();
-
-  document.getElementById("exportCsvBtn").onclick = () => {
-    const headers = ["date","time","account","session","instrument","direction","dailyBias","marketCondition","trigger","frameworkValid","entry","stopLoss","target","contracts","risk","plannedRR","exitType","exitPrice","finalPnL","finalR","mfe","mae","contextScore","frameworkScore","entryScore","riskScore","managementScore","totalScore","ruleBreak","classification","followedPlan","validSetup","lesson","nextTime","notes","entryExecutionStyle"];
-    const rows = TRADES.map(t => [
-      t.date, t.time, resolveAccountName(t.accountId), t.session, t.instrument, t.direction, t.framework.bias, t.marketContext.marketCondition, t.framework.trigger,
-      t.review.validSetup, t.execution.entry, t.execution.stopLoss, t.execution.target, t.execution.contracts, t.execution.risk, t.execution.plannedRR,
-      t.management.exitType, t.management.exitPrice, t.management.finalPnL, t.management.finalR, t.management.mfe, t.management.mae,
-      t.executionReview.contextScore, t.executionReview.frameworkScore, t.executionReview.entryScore, t.executionReview.riskScore, t.executionReview.managementScore,
-      t.executionReview.totalScore, t.executionReview.ruleBreak, t.classification.label, t.review.followedPlan, t.review.validSetup, t.review.lesson, t.review.nextTime, t.notes,
-      t.entryExecutionStyle || "Unclassified"
-    ]);
-    const csv = [headers.join(","), ...rows.map(r => r.map(csvEscape).join(","))].join("\n");
-    downloadFile("trading-journal-" + todayISO() + ".csv", csv, "text/csv");
-  };
-
-  document.getElementById("importJsonInput").onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await readFileAsText(file);
-      const data = JSON.parse(text);
-      if (!Array.isArray(data.trades)) throw new Error("Missing trades array");
-      openImportPreview(data);
-    } catch (err) {
-      alert("Import failed: file is not a valid export (" + err.message + ").");
-    } finally {
-      e.target.value = "";
-    }
-  };
-
-  // Restore Data is intentionally separate from Import/Merge: it is a full,
-  // destructive replacement of local data (including Accounts), matching
-  // the app's original Restore behavior — never used silently for Import.
-  document.getElementById("restoreInput").onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await readFileAsText(file);
-      const data = JSON.parse(text);
-      if (!Array.isArray(data.trades)) throw new Error("Missing trades array");
-      if (!confirm("RESTORE will REPLACE all local data (Accounts, Trades, Playbook, Reviews, Settings) with the contents of this backup file. This cannot be undone. Continue?")) return;
-      await idbClear("trades"); await idbClear("playbook"); await idbClear("weeklyReviews"); await idbClear("accounts");
-      for (const t of data.trades) await idbPut("trades", t);
-      for (const p of (data.playbook || [])) await idbPut("playbook", p);
-      for (const r of (data.weeklyReviews || [])) await idbPut("weeklyReviews", r);
-      for (const a of (data.accounts || [])) await idbPut("accounts", a);
-      if (data.settings) { SETTINGS = { ...defaultSettings(), ...data.settings, key: "settings" }; await idbPut("kv", SETTINGS); }
-      await loadAllData();
-      toast("Restore complete — local data replaced.");
-      router();
-    } catch (err) {
-      alert("Restore failed: file is not a valid backup (" + err.message + ").");
-    } finally {
-      e.target.value = "";
-    }
-  };
-
-  document.getElementById("loadDemoBtn").onclick = async () => {
-    if (!confirm("Load demonstration data? It will be tagged and fully removable via 'Remove Demo Data'.")) return;
-    const demo = generateDemoTrades();
-    for (const t of demo) await idbPut("trades", t);
-    await loadAllData();
-    toast("Demo data loaded.");
-    router();
-  };
-  document.getElementById("removeDemoBtn").onclick = async () => {
-    const demoTrades = TRADES.filter(t => t.isDemo);
-    if (!demoTrades.length) { toast("No demo data present."); return; }
-    if (!confirm("Remove all demo trades?")) return;
-    for (const t of demoTrades) await idbDelete("trades", t.tradeId);
-    await loadAllData();
-    toast("Demo data removed.");
-    router();
-  };
-
-  document.getElementById("deleteAllBtn").onclick = async () => {
-    if (!confirm("This will permanently delete ALL Journal, Playbook, and Review data. This cannot be undone. Continue?")) return;
-    if (!confirm("Are you absolutely sure? Type-confirm by clicking OK once more.")) return;
-    await idbClear("trades"); await idbClear("playbook"); await idbClear("weeklyReviews");
-    await loadAllData();
-    toast("All data deleted.");
-    router();
-  };
 }
 
-/* ---------------------------------------------------------------------
-   14b. ACCOUNT MANAGEMENT (list / add / edit / archive / delete-guard)
-   --------------------------------------------------------------------- */
-function renderAccountsList() {
+function renderSettingsAccounts(body) {
+  body.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div class="section-title" style="margin:0;">Trading Accounts</div>
+      <button class="btn primary" id="addAccount">+ New Account</button>
+    </div>
+    <div id="accountsList"></div>
+  `;
+  document.getElementById("addAccount").onclick = () => openAccountEditor(null);
   const list = document.getElementById("accountsList");
-  if (!list) return;
-  if (!ACCOUNTS.length) { list.innerHTML = '<div class="empty-state">No Accounts yet. Add one to start logging Trades.</div>'; return; }
-  const active = ACCOUNTS.filter(a => !a.archived);
-  const archived = ACCOUNTS.filter(a => a.archived);
-  list.innerHTML = [...active, ...archived].map(a => {
+  if (!ACCOUNTS.length) { list.innerHTML = '<div class="empty-state">No accounts yet — add your first.</div>'; return; }
+  list.innerHTML = ACCOUNTS.map(a => {
     const tradeCount = TRADES.filter(t => t.accountId === a.id).length;
     return `
-    <div class="card" style="margin-bottom:10px;opacity:${a.archived ? 0.55 : 1};">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
-        <div>
-          <div style="font-weight:600;font-size:14.5px;">${esc(a.name)} ${a.archived ? '<span class="hint">(archived)</span>' : ''}</div>
-          <div class="hint">${fmtCurrency(a.accountSize)} · ${tradeCount} trade(s)</div>
+      <div class="card" style="margin-bottom:10px;${a.archived?'opacity:0.6;':''}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div style="font-weight:600;">${esc(a.name)} ${a.archived?'<span class="badge neutral">Archived</span>':''}</div>
+            <div style="font-size:12px;color:var(--text-faint);font-family:var(--mono);margin-top:3px;">Size ${fmtCurrency(a.accountSize)} · Start ${fmtCurrency(a.startingBalance)} · ${tradeCount} trade(s)</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn sm" data-edit="${a.id}">Edit</button>
+            <button class="btn sm" data-arch="${a.id}">${a.archived?'Unarchive':'Archive'}</button>
+          </div>
         </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn sm" data-act="edit" data-id="${a.id}">Edit</button>
-          <button class="btn sm" data-act="arch" data-id="${a.id}">${a.archived ? 'Unarchive' : 'Archive'}</button>
-          <button class="btn sm danger" data-act="del" data-id="${a.id}">Delete</button>
-        </div>
-      </div>
-    </div>`;
+      </div>`;
   }).join("");
-  list.querySelectorAll("button[data-act]").forEach(btn => {
-    btn.onclick = async () => {
-      const a = getAccountById(btn.dataset.id);
-      if (!a) return;
-      if (btn.dataset.act === "edit") {
-        openAccountEditor(a);
-      } else if (btn.dataset.act === "arch") {
-        await archiveAccount(a.id, !a.archived);
-        renderAccountsList();
-        toast(a.archived ? "Account archived." : "Account unarchived.");
-      } else if (btn.dataset.act === "del") {
-        const tradeCount = TRADES.filter(t => t.accountId === a.id).length;
-        if (tradeCount > 0) {
-          if (confirm(`This account contains ${tradeCount} trade(s). Trades are never deleted automatically.\n\nArchive "${a.name}" instead? (Cancel to do nothing)`)) {
-            await archiveAccount(a.id, true);
-            renderAccountsList();
-            toast("Account archived (trades preserved).");
-          }
-          return;
-        }
-        if (confirm(`Delete empty account "${a.name}"? This cannot be undone.`)) {
-          await idbDelete("accounts", a.id);
-          ACCOUNTS = ACCOUNTS.filter(x => x.id !== a.id);
-          renderAccountsList();
-          toast("Account deleted.");
-        }
-      }
-    };
+  list.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openAccountEditor(b.dataset.edit));
+  list.querySelectorAll("[data-arch]").forEach(b => b.onclick = async () => {
+    const acc = getAccountById(b.dataset.arch);
+    await archiveAccount(acc.id, !acc.archived);
+    renderSettingsAccounts(body);
   });
 }
-
-function openAccountEditor(existing) {
-  const editing = !!existing;
-  const draft = existing ? JSON.parse(JSON.stringify(existing)) : blankAccount();
+function openAccountEditor(id) {
+  const a = id ? JSON.parse(JSON.stringify(getAccountById(id))) : blankAccount({});
   const root = document.getElementById("modal-root");
   root.innerHTML = `
     <div class="modal-backdrop" id="accBackdrop">
       <div class="modal">
-        <div class="modal-head"><h2>${editing ? 'Edit Account' : 'New Account'}</h2><button class="close-x" id="accClose">&times;</button></div>
+        <div class="modal-head"><h2>${id ? "Edit" : "New"} Account</h2><button class="close-x" id="accClose">&times;</button></div>
+        <div class="field"><label>Account Name</label><input type="text" id="a_name" value="${esc(a.name)}"></div>
         <div class="grid grid-2">
-          <div class="field"><label>Account Name</label><input type="text" id="acc_name" value="${esc(draft.name)}"></div>
-          <div class="field"><label>Account Size ($)</label><input type="number" id="acc_size" value="${draft.accountSize}"></div>
-          <div class="field"><label>Starting Balance ($)</label><input type="number" id="acc_startBal" value="${draft.startingBalance}"></div>
-          <div class="field"><label>Profit Target ($)</label><input type="number" id="acc_target" value="${draft.profitTarget}"></div>
-          <div class="field"><label>Max Drawdown ($)</label><input type="number" id="acc_maxDD" value="${draft.maxDrawdown}"></div>
-          <div class="field"><label>Daily Loss Limit ($)</label><input type="number" id="acc_dailyLoss" value="${draft.dailyLossLimit}"></div>
-          <div class="field"><label>Risk Per Trade ($)</label><input type="number" step="any" id="acc_risk" value="${draft.riskPerTrade}"></div>
-          <div class="field"><label>Default Contract</label><input type="text" id="acc_contract" value="${esc(draft.defaultContract)}"></div>
-          <div class="field"><label>Default Instrument</label><input type="text" id="acc_instrument" value="${esc(draft.defaultInstrument)}"></div>
+          <div class="field"><label>Account Size</label><input type="number" step="any" id="a_size" value="${a.accountSize}"></div>
+          <div class="field"><label>Starting Balance</label><input type="number" step="any" id="a_start" value="${a.startingBalance}"></div>
+          <div class="field"><label>Profit Target</label><input type="number" step="any" id="a_target" value="${a.profitTarget}"></div>
+          <div class="field"><label>Max Drawdown</label><input type="number" step="any" id="a_dd" value="${a.maxDrawdown}"></div>
+          <div class="field"><label>Daily Loss Limit</label><input type="number" step="any" id="a_daily" value="${a.dailyLossLimit}"></div>
+          <div class="field"><label>Risk Per Trade (%)</label><input type="number" step="any" id="a_risk" value="${a.riskPerTrade}"></div>
+          <div class="field"><label>Default Contract</label><input type="text" id="a_contract" value="${esc(a.defaultContract)}"></div>
+          <div class="field"><label>Default Instrument</label><input type="text" id="a_instrument" value="${esc(a.defaultInstrument)}"></div>
         </div>
-        <div class="hint">Changing these values only affects future defaults and Dashboard display — historical Trades keep the actual values recorded at the time.</div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
-          <button class="btn" id="accCancel">Cancel</button>
-          <button class="btn primary" id="accSave">Save Account</button>
-        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;"><button class="btn" id="accCancel">Cancel</button><button class="btn primary" id="accSave">Save Account</button></div>
       </div>
     </div>
   `;
@@ -2499,386 +2632,795 @@ function openAccountEditor(existing) {
   document.getElementById("accCancel").onclick = close;
   document.getElementById("accBackdrop").onclick = e => { if (e.target.id === "accBackdrop") close(); };
   document.getElementById("accSave").onclick = async () => {
-    draft.name = document.getElementById("acc_name").value || "Untitled Account";
-    draft.accountSize = Number(document.getElementById("acc_size").value) || 0;
-    draft.startingBalance = Number(document.getElementById("acc_startBal").value) || 0;
-    draft.profitTarget = Number(document.getElementById("acc_target").value) || 0;
-    draft.maxDrawdown = Number(document.getElementById("acc_maxDD").value) || 0;
-    draft.dailyLossLimit = Number(document.getElementById("acc_dailyLoss").value) || 0;
-    draft.riskPerTrade = Number(document.getElementById("acc_risk").value) || 0;
-    draft.defaultContract = document.getElementById("acc_contract").value;
-    draft.defaultInstrument = document.getElementById("acc_instrument").value;
-    await saveAccount(draft);
-    close();
-    renderAccountsList();
-    toast(editing ? "Account updated." : "Account created.");
+    a.name = document.getElementById("a_name").value.trim() || "Untitled Account";
+    a.accountSize = Number(document.getElementById("a_size").value) || 0;
+    a.startingBalance = Number(document.getElementById("a_start").value) || 0;
+    a.profitTarget = Number(document.getElementById("a_target").value) || 0;
+    a.maxDrawdown = Number(document.getElementById("a_dd").value) || 0;
+    a.dailyLossLimit = Number(document.getElementById("a_daily").value) || 0;
+    a.riskPerTrade = Number(document.getElementById("a_risk").value) || 0;
+    a.defaultContract = document.getElementById("a_contract").value;
+    a.defaultInstrument = document.getElementById("a_instrument").value;
+    await saveAccount(a);
+    close(); renderSettings(document.getElementById("main-content")); toast("Account saved.");
   };
 }
 
-/* ---------------------------------------------------------------------
-   14c. IMPORT / MERGE (non-destructive — "new records only")
-   Rule: EXISTING ID -> KEEP LOCAL. NEW ID -> ADD. Never overwrite,
-   never delete, never touch local Settings. Restore (above) is the only
-   destructive path, and it is a separate, explicitly-labeled button.
-
-   Account matching (bugfix): an imported Account is matched against local
-   Accounts in this order —
-     1) by accountId (exact match -> same account, no remap needed)
-     2) if no id match, by accountName:
-          - exactly one local Account shares the name -> treat as the same
-            account; imported trades are remapped onto the LOCAL id
-          - two or more local Accounts share the name -> ambiguous, never
-            auto-picked; surfaced to the user as an explicit conflict to
-            resolve before the import can proceed
-          - no local Account shares the name -> genuinely new Account
-   Only genuinely-new Accounts are ever added. Existing Accounts (matched
-   by id or by name) are never overwritten, renamed, or duplicated.
-   --------------------------------------------------------------------- */
-function previewImport(data, nameConflictResolutions) {
-  nameConflictResolutions = nameConflictResolutions || {}; // { importedAccountId: localAccountId | "__new__" }
-  const localTradeIds = new Set(TRADES.map(t => t.tradeId));
-  const localAccountIds = new Set(ACCOUNTS.map(a => a.id));
-  const importedAccountsRaw = Array.isArray(data.accounts) ? data.accounts : [];
-
-  // Canonical remap: imported accountId -> the id that should actually be written to
-  // Trades from here on (either an existing local id, or the imported account's own id
-  // when it truly is new).
-  const accountIdRemap = new Map();
-  const accountsNew = [];            // genuinely new accounts to add (Rule: never auto-created otherwise)
-  const accountsMatchedById = [];    // Rule 1: imported id already exists locally
-  const accountsMatchedByName = [];  // Rule 2/3/4: no id match, but exactly one local account shares the name
-  const nameConflicts = [];          // Rule 9: no id match, name matches 2+ local accounts — needs user input
-
-  importedAccountsRaw.forEach(a => {
-    if (!a || !a.id) return;
-    // Rule 1: match by accountId first.
-    if (localAccountIds.has(a.id)) {
-      accountIdRemap.set(a.id, a.id);
-      accountsMatchedById.push(a);
-      return;
-    }
-    // Rule 2: accountId not found locally -> fall back to accountName.
-    const candidates = ACCOUNTS.filter(local => local.name === a.name);
-    if (candidates.length === 1) {
-      // Rule 3/4: exactly one local account has this name -> same account, local id is canonical.
-      accountIdRemap.set(a.id, candidates[0].id);
-      accountsMatchedByName.push({ imported: a, local: candidates[0] });
-    } else if (candidates.length > 1) {
-      // Rule 9: ambiguous — never auto-pick.
-      const resolution = nameConflictResolutions[a.id];
-      if (resolution === "__new__") {
-        accountIdRemap.set(a.id, a.id);
-        accountsNew.push(a);
-      } else if (resolution && localAccountIds.has(resolution)) {
-        accountIdRemap.set(a.id, resolution);
-        accountsMatchedByName.push({ imported: a, local: getAccountById(resolution) });
-      } else {
-        nameConflicts.push({ importedAccount: a, candidates });
-      }
-    } else {
-      // No id match, no name match -> genuinely new account.
-      accountIdRemap.set(a.id, a.id);
-      accountsNew.push(a);
-    }
-  });
-
-  // De-duplicate trades *within the file itself* by tradeId.
-  const seen = new Set();
-  const deduped = [];
-  let duplicatesInFile = 0, invalidTrades = 0;
-  (data.trades || []).forEach(t => {
-    if (!t || !t.tradeId) { invalidTrades++; return; }
-    if (seen.has(t.tradeId)) { duplicatesInFile++; return; }
-    seen.add(t.tradeId);
-    deduped.push(t);
-  });
-
-  const resolvableAccountIds = new Set([...localAccountIds, ...accountsNew.map(a => a.id)]);
-  const tradesNew = [];
-  const legacyNoAccount = [];
-  let tradesExisting = 0;
-  deduped.forEach(t => {
-    if (localTradeIds.has(t.tradeId)) { tradesExisting++; return; }
-    // Remap the trade's accountId from the imported id to the canonical local id
-    // (Rule 5) BEFORE deciding where it lands. Existing-by-tradeId trades above are
-    // never touched — this remap only ever applies to genuinely new trades.
-    let resolvedAccountId = t.accountId;
-    if (resolvedAccountId && accountIdRemap.has(resolvedAccountId)) {
-      resolvedAccountId = accountIdRemap.get(resolvedAccountId);
-    }
-    if (resolvedAccountId && resolvableAccountIds.has(resolvedAccountId)) {
-      t.accountId = resolvedAccountId; // canonical id from here on (Rule 6 then dedupes/adds by tradeId as before)
-      tradesNew.push(t);
-    } else {
-      // Still unresolved: missing accountId, or blocked behind an unresolved name conflict.
-      legacyNoAccount.push(t);
-    }
-  });
-
-  return {
-    accountsNew, accountsMatchedById, accountsMatchedByName, nameConflicts,
-    tradesNew, legacyNoAccount, tradesExisting, duplicatesInFile, invalidTrades
-  };
-}
-
-function openImportPreview(data, nameConflictResolutions) {
-  const preview = previewImport(data, nameConflictResolutions);
-  // Rule 9: if any imported Account name is ambiguous against local Accounts, stop and
-  // ask the user to resolve each one explicitly before showing the merge preview at all.
-  if (preview.nameConflicts.length && !nameConflictResolutions) {
-    openImportNameConflictModal(data, preview.nameConflicts);
-    return;
-  }
-
-  const root = document.getElementById("modal-root");
-  const totalNew = preview.tradesNew.length + preview.legacyNoAccount.length;
-  const activeAccounts = getActiveAccounts();
-  root.innerHTML = `
-    <div class="modal-backdrop" id="impBackdrop">
-      <div class="modal">
-        <div class="modal-head"><h2>Import / Merge Preview</h2><button class="close-x" id="impClose">&times;</button></div>
-        <div class="grid grid-2">
-          <div class="kv"><span class="k">Current data</span><span class="v">${TRADES.length} trade(s), ${ACCOUNTS.length} account(s)</span></div>
-          <div class="kv"><span class="k">Imported file</span><span class="v">${(data.trades||[]).length} trade(s), ${(data.accounts||[]).length} account(s)</span></div>
-        </div>
-        <div class="divider"></div>
-        <div class="kv"><span class="k">Accounts — new</span><span class="v pos">${preview.accountsNew.length}</span></div>
-        <div class="kv"><span class="k">Accounts — matched by ID (already local)</span><span class="v">${preview.accountsMatchedById.length}</span></div>
-        <div class="kv"><span class="k">Accounts — matched by name (merged, no duplicate)</span><span class="v">${preview.accountsMatchedByName.length}</span></div>
-        <div class="kv"><span class="k">Trades — new</span><span class="v pos">${totalNew}</span></div>
-        <div class="kv"><span class="k">Trades — already exist locally (skipped)</span><span class="v">${preview.tradesExisting}</span></div>
-        <div class="kv"><span class="k">Duplicates inside file (skipped)</span><span class="v">${preview.duplicatesInFile}</span></div>
-        <div class="kv"><span class="k">Invalid records (skipped)</span><span class="v">${preview.invalidTrades}</span></div>
-        ${preview.accountsMatchedByName.length ? `<div class="hint" style="color:var(--accent);margin-top:8px;">🔗 Matched by name (imported ID differed, existing local account kept — no new account created): ${preview.accountsMatchedByName.map(m => `"${esc(m.imported.name)}" → local "${esc(m.local.name)}"`).join(", ")}</div>` : ""}
-        ${preview.legacyNoAccount.length ? `
-          <div class="divider"></div>
-          <div class="field">
-            <label>${preview.legacyNoAccount.length} imported trade(s) do not reference a resolvable Account. Select a destination:</label>
-            <select id="imp_destAccount">
-              ${activeAccounts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join("")}
-            </select>
-            ${!activeAccounts.length ? '<div class="hint" style="color:var(--red);">No active Account available — add one first.</div>' : ""}
-          </div>
-        ` : ""}
-        <div class="divider"></div>
-        <div class="hint"><b>Existing records will NOT be overwritten or deleted. Only new records will be added.</b> Local Settings are never changed by Import.</div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
-          <button class="btn" id="impCancel">Cancel</button>
-          <button class="btn primary" id="impConfirm" ${totalNew===0 && preview.accountsNew.length===0 ? 'disabled' : ''}>${totalNew>0 ? `Import ${totalNew} New Trade${totalNew===1?'':'s'}` : (preview.accountsNew.length>0 ? 'Import New Data' : 'Nothing New To Import')}</button>
-        </div>
-      </div>
+function renderSettingsRisk(body) {
+  const s = SETTINGS;
+  body.innerHTML = `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">Risk Control</div>
+      <div class="check-row"><input type="checkbox" id="s_enforce" ${s.riskControl.enforceMaxRisk?'checked':''}><label for="s_enforce">Warn when a trade's risk exceeds a maximum</label></div>
+      <div class="field" style="margin-top:12px;"><label>Maximum Risk Amount ($)</label><input type="number" step="any" id="s_maxRisk" value="${s.riskControl.maxRiskAmount}"></div>
+      <button class="btn primary" id="saveRisk">Save</button>
     </div>
   `;
-  const close = () => root.innerHTML = "";
-  document.getElementById("impClose").onclick = close;
-  document.getElementById("impCancel").onclick = close;
-  document.getElementById("impBackdrop").onclick = e => { if (e.target.id === "impBackdrop") close(); };
-  document.getElementById("impConfirm").onclick = async () => {
-    const destSelect = document.getElementById("imp_destAccount");
-    const destAccountId = destSelect ? destSelect.value : null;
-    if (preview.legacyNoAccount.length && !destAccountId) { toast("Select a destination account for unresolved trades."); return; }
-    await mergeImportedData(preview, destAccountId);
-    close();
-    router();
+  document.getElementById("saveRisk").onclick = async () => {
+    s.riskControl.enforceMaxRisk = document.getElementById("s_enforce").checked;
+    s.riskControl.maxRiskAmount = Number(document.getElementById("s_maxRisk").value) || 0;
+    await idbPut("kv", s); toast("Risk settings saved.");
   };
 }
 
-// Rule 9 UI: lets the user explicitly choose, per ambiguous imported Account name,
-// which local Account it really is (or to keep it as a separate new Account). Nothing
-// is ever auto-selected here — the import cannot proceed past this until resolved.
-function openImportNameConflictModal(data, conflicts) {
-  const root = document.getElementById("modal-root");
-  root.innerHTML = `
-    <div class="modal-backdrop" id="impConflictBackdrop">
-      <div class="modal">
-        <div class="modal-head"><h2>Resolve Account Name Conflicts</h2><button class="close-x" id="impConflictClose">&times;</button></div>
-        <div class="hint" style="margin-bottom:12px;">These imported Accounts don't match a local Account by ID, and their name matches more than one local Account. Choose the correct match for each — nothing is decided automatically.</div>
-        ${conflicts.map((c, i) => `
-          <div class="field">
-            <label>Imported Account: <b>${esc(c.importedAccount.name)}</b> <span class="hint">(imported ID: ${esc(c.importedAccount.id)})</span></label>
-            <select id="conflict_${i}">
-              ${c.candidates.map(local => `<option value="${local.id}">Merge into "${esc(local.name)}" — local ID ${esc(local.id)}</option>`).join("")}
-              <option value="__new__">Keep separate — add as a new Account</option>
-            </select>
-          </div>
-        `).join("")}
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
-          <button class="btn" id="impConflictCancel">Cancel</button>
-          <button class="btn primary" id="impConflictContinue">Continue</button>
-        </div>
-      </div>
+function renderSettingsDisplay(body) {
+  const s = SETTINGS;
+  body.innerHTML = `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">Display</div>
+      <div class="field"><label>Theme</label><select id="s_theme"><option value="dark" ${s.display.theme==='dark'?'selected':''}>Dark</option><option value="light" ${s.display.theme==='light'?'selected':''}>Light</option></select></div>
+      <div class="check-row"><input type="checkbox" id="s_compact" ${s.display.compact?'checked':''}><label for="s_compact">Compact mode</label></div>
+      <button class="btn primary" id="saveDisplay" style="margin-top:12px;">Save</button>
     </div>
   `;
-  const close = () => root.innerHTML = "";
-  document.getElementById("impConflictClose").onclick = close;
-  document.getElementById("impConflictCancel").onclick = close;
-  document.getElementById("impConflictBackdrop").onclick = e => { if (e.target.id === "impConflictBackdrop") close(); };
-  document.getElementById("impConflictContinue").onclick = () => {
-    const resolutions = {};
-    conflicts.forEach((c, i) => { resolutions[c.importedAccount.id] = document.getElementById("conflict_" + i).value; });
-    openImportPreview(data, resolutions);
+  document.getElementById("saveDisplay").onclick = async () => {
+    s.display.theme = document.getElementById("s_theme").value;
+    s.display.compact = document.getElementById("s_compact").checked;
+    await idbPut("kv", s);
+    applyDisplaySettings();
+    toast("Display settings saved.");
   };
 }
-
-async function mergeImportedData(preview, destAccountId) {
-  // 1. Only genuinely new accounts are added (Rule: never create duplicates). Accounts
-  //    matched by ID or by name are never written here — their local record is untouched.
-  for (const a of preview.accountsNew) {
-    await idbPut("accounts", a);
-    ACCOUNTS.push(a);
-  }
-  // 2. Legacy trades without a resolvable accountId get the chosen destination.
-  preview.legacyNoAccount.forEach(t => { t.accountId = destAccountId; });
-  // 3. Add only genuinely new trades (by tradeId) — existing IDs were already excluded in
-  //    previewImport, and accountId on each was already remapped to the canonical local id.
-  const toAdd = [...preview.tradesNew, ...preview.legacyNoAccount];
-  for (const t of toAdd) {
-    await idbPut("trades", t);
-    TRADES.push(t);
-  }
-  const mergedByName = preview.accountsMatchedByName.length;
-  toast(`Imported ${toAdd.length} new trade(s) and ${preview.accountsNew.length} new account(s). ${preview.tradesExisting} trade(s) already existed and were skipped.${mergedByName ? ' ' + mergedByName + ' account(s) matched by name and were merged into the existing account.' : ''}`);
-}
-
 function applyDisplaySettings() {
   document.body.setAttribute("data-theme", SETTINGS.display.theme);
   document.body.setAttribute("data-compact", SETTINGS.display.compact ? "1" : "0");
 }
 
+function renderSettingsData(body) {
+  body.innerHTML = `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">Export</div>
+      <p class="hint">Full backup includes trades, accounts, playbook, reviews, settings, and the complete Framework configuration &amp; version history.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn" id="exportJSON">Export All (JSON)</button>
+        <button class="btn" id="exportCSV">Export Trades (CSV)</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <div class="section-title" style="margin-top:0;">Import</div>
+      <p class="hint">Import a JSON backup. Existing records are merged by id — no duplicate trades, accounts, or framework versions are created.</p>
+      <input type="file" id="importFile" accept="application/json">
+      <div id="importResult" style="margin-top:10px;"></div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <div class="section-title" style="margin-top:0;">Demo Data</div>
+      <p class="hint">Generate 40 sample trades (marked as demo) to explore analytics. Uses the active framework configuration.</p>
+      <button class="btn" id="genDemo">Generate Demo Trades</button>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <div class="section-title" style="margin-top:0;color:var(--red);">Danger Zone</div>
+      <button class="btn danger" id="wipeData">Erase All Data</button>
+    </div>
+  `;
+  document.getElementById("exportJSON").onclick = exportAllJSON;
+  document.getElementById("exportCSV").onclick = exportTradesCSV;
+  document.getElementById("importFile").onchange = handleImportFile;
+  document.getElementById("genDemo").onclick = async () => {
+    await generateDemoTrades();
+    renderSettings(document.getElementById("main-content"));
+  };
+  document.getElementById("wipeData").onclick = async () => {
+    if (confirm("This erases ALL data permanently. Continue?") && confirm("Are you absolutely sure? There is no undo.")) {
+      await idbClear("trades"); await idbClear("playbook"); await idbClear("weeklyReviews"); await idbClear("accounts"); await idbClear("framework");
+      TRADES = []; PLAYBOOKS = []; REVIEWS = []; ACCOUNTS = [];
+      FRAMEWORK_VERSIONS = []; ACTIVE_FRAMEWORK = null;
+      await migrateFrameworkIfNeeded();
+      toast("All data erased.");
+      location.hash = "#/dashboard";
+    }
+  };
+}
+
+/* ---- EXPORT ---- */
+function buildExportObject() {
+  return {
+    formatVersion: 3, // bumped: now includes framework config + versions
+    exportedAt: new Date().toISOString(),
+    settings: SETTINGS,
+    accounts: ACCOUNTS,
+    trades: TRADES,
+    playbook: PLAYBOOKS,
+    weeklyReviews: REVIEWS,
+    framework: {
+      activeVersionId: ACTIVE_FRAMEWORK ? ACTIVE_FRAMEWORK.id : null,
+      versions: FRAMEWORK_VERSIONS
+    }
+  };
+}
+function exportAllJSON() {
+  const data = JSON.stringify(buildExportObject(), null, 2);
+  downloadFile("edge-research-backup-" + todayISO() + ".json", data, "application/json");
+  toast("Exported JSON backup.");
+}
+function exportTradesCSV() {
+  const headers = [
+    "tradeId","frameworkVersion","date","time","account","session","instrument","direction",
+    "bias","trigger","whichPOI","whichTF","intradayScenario",
+    "entry","stopLoss","target","contracts","risk","plannedRR",
+    "exitType","finalPnL","finalR","executionScore","ruleBreak","frameworkValid","classification","entryExecutionStyle","notes"
+  ];
+  const rows = TRADES.map(t => [
+    t.tradeId, tradeVersionLabel(t), t.date, t.time, resolveAccountName(t.accountId), t.session, t.instrument, t.direction,
+    tradeBiasLabel(t), tradeTriggerLabel(t),
+    (t.c2Intraday && t.c2Intraday.whichPOI ? t.c2Intraday.whichPOI.map(id => poiLabel(t, id)).join(" | ") : ""),
+    (t.c2Intraday ? tfLabel(t, t.c2Intraday.whichTF) : ""),
+    (t.c2Intraday ? scenarioLabel(t, t.c2Intraday.scenario) : ""),
+    t.execution.entry, t.execution.stopLoss, t.execution.target, t.execution.contracts, t.execution.risk, t.execution.plannedRR,
+    t.management.exitType, t.management.finalPnL, t.management.finalR, t.executionReview.totalScore, t.executionReview.ruleBreak,
+    (t.review.validSetup===true?"YES":t.review.validSetup===false?"NO":""), t.classification.label, t.entryExecutionStyle || "", t.notes
+  ].map(csvEscape).join(","));
+  downloadFile("edge-research-trades-" + todayISO() + ".csv", headers.join(",") + "\n" + rows.join("\n"), "text/csv");
+  toast("Exported trades CSV.");
+}
+
+/* ---- IMPORT (merge by id; no duplicate entities) ---- */
+async function handleImportFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const resultEl = document.getElementById("importResult");
+  try {
+    const text = await readFileAsText(file);
+    const data = JSON.parse(text);
+    let added = { trades: 0, accounts: 0, playbook: 0, reviews: 0, versions: 0 };
+
+    // Framework versions first, so imported trades can reference them.
+    if (data.framework && Array.isArray(data.framework.versions)) {
+      for (const v of data.framework.versions) {
+        if (!v || !v.id) continue;
+        if (!FRAMEWORK_VERSIONS.some(x => x.id === v.id)) {
+          await idbPut("framework", v);
+          FRAMEWORK_VERSIONS.push(v);
+          added.versions++;
+        }
+      }
+      // Adopt imported active pointer only if we currently have none.
+      if (!ACTIVE_FRAMEWORK && data.framework.activeVersionId) {
+        const av = frameworkVersionById(data.framework.activeVersionId);
+        if (av) { ACTIVE_FRAMEWORK = av; SETTINGS.activeFrameworkVersionId = av.id; await idbPut("kv", SETTINGS); }
+      }
+    }
+
+    if (Array.isArray(data.accounts)) {
+      for (const a of data.accounts) {
+        if (!a || !a.id) continue;
+        if (!ACCOUNTS.some(x => x.id === a.id)) { await idbPut("accounts", a); ACCOUNTS.push(a); added.accounts++; }
+      }
+    }
+    if (Array.isArray(data.trades)) {
+      for (const t of data.trades) {
+        if (!t || !t.tradeId) continue;
+        if (!TRADES.some(x => x.tradeId === t.tradeId)) {
+          const shaped = migrateTradeShape(t);
+          await idbPut("trades", shaped); TRADES.push(shaped); added.trades++;
+        }
+      }
+    }
+    if (Array.isArray(data.playbook)) {
+      for (const p of data.playbook) {
+        if (!p || !p.id) continue;
+        if (!PLAYBOOKS.some(x => x.id === p.id)) { await idbPut("playbook", p); PLAYBOOKS.push(p); added.playbook++; }
+      }
+    }
+    if (Array.isArray(data.weeklyReviews)) {
+      for (const r of data.weeklyReviews) {
+        if (!r || !r.id) continue;
+        if (!REVIEWS.some(x => x.id === r.id)) { await idbPut("weeklyReviews", r); REVIEWS.push(r); added.reviews++; }
+      }
+    }
+    resultEl.innerHTML = `<div class="hint" style="color:var(--green);">Imported — ${added.trades} trades, ${added.accounts} accounts, ${added.playbook} setups, ${added.reviews} reviews, ${added.versions} framework versions (duplicates skipped).</div>`;
+    toast("Import complete.");
+  } catch (err) {
+    resultEl.innerHTML = `<div class="hint" style="color:var(--red);">Import failed: ${esc(err.message)}</div>`;
+  }
+}
 /* ---------------------------------------------------------------------
-   15. DEMO DATA (off by default, fully removable)
+   14b. FRAMEWORK CONFIGURATION EDITOR  (NEW — LAYER 1 management UI)
+   ---------------------------------------------------------------------
+   Lets the trader manage the framework without touching code:
+     - Bias Models (+ their checklists)
+     - C2 Intraday POI options (multi-select source)
+     - C2 Intraday TF options, Scenario options
+     - Trigger (Entry) Sessions (+ their checklists)
+     - Version lifecycle: edit a Draft, Publish it (becomes active for new
+       trades), Lock it (immutable). Historical trades always keep the
+       version they were recorded under.
+
+   Editing rules:
+     - Published/Locked versions are read-only. To change the framework you
+       create a Draft (copied from the active config), edit it, then Publish.
+     - Every entity keeps its STABLE id across edits, so historical trades
+       keep resolving correctly. Removing/disabling an option never rewrites
+       old trades — removed options still display via the label helpers.
    --------------------------------------------------------------------- */
-function generateDemoTrades() {
-  const out = [];
-  const biases = FRAMEWORK.biasOptions;
-  const sessions = SESSIONS;
-  for (let i = 0; i < 24; i++) {
+let fwEditorDraftId = null; // id of the draft version currently being edited (if any)
+
+function getDraftVersion() {
+  return FRAMEWORK_VERSIONS.find(v => v.status === "draft") || null;
+}
+
+function renderFrameworkEditor(body) {
+  const draft = getDraftVersion();
+  const active = ACTIVE_FRAMEWORK;
+  body.innerHTML = `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">Framework Versions</div>
+      <p class="hint">New trades use the <b>active</b> (published) version. Historical trades always keep the version they were recorded under. Edit by creating a Draft, then Publish it.</p>
+      <div id="fwVersionsList"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        ${draft ? "" : `<button class="btn primary" id="fwNewDraft">Create Draft from Active</button>`}
+        ${draft ? `<button class="btn primary" id="fwPublishDraft">Publish Draft V${esc(draft.version)}</button>` : ""}
+        ${draft ? `<button class="btn danger" id="fwDiscardDraft">Discard Draft</button>` : ""}
+      </div>
+    </div>
+    <div id="fwEditArea" style="margin-top:14px;"></div>
+  `;
+
+  const list = document.getElementById("fwVersionsList");
+  const sorted = [...FRAMEWORK_VERSIONS].sort((a, b) => String(b.version).localeCompare(String(a.version), undefined, { numeric: true }));
+  list.innerHTML = sorted.length ? sorted.map(v => {
+    const isActive = ACTIVE_FRAMEWORK && v.id === ACTIVE_FRAMEWORK.id;
+    const pill = v.status === "draft" ? '<span class="pill draft">DRAFT</span>' : (v.status === "locked" ? '<span class="pill locked">LOCKED</span>' : '<span class="pill ver">PUBLISHED</span>');
+    const usedCount = TRADES.filter(t => t.frameworkVersionId === v.id).length;
+    return `<div class="fw-cfg-item">
+      <div class="grow"><span class="lbl">V${esc(v.version)}</span> ${pill} ${isActive ? '<span class="pill req">ACTIVE</span>' : ''}
+        <div class="meta">${usedCount} trade(s) · created ${esc((v.createdAt||'').slice(0,10))}</div></div>
+      ${v.status === "draft" ? `<button class="btn sm" data-editver="${v.id}">Edit</button>` : ""}
+      ${v.status === "published" && !isActive ? `<button class="btn sm" data-activate="${v.id}">Set Active</button>` : ""}
+      ${v.status === "published" ? `<button class="btn sm" data-lock="${v.id}">Lock</button>` : ""}
+    </div>`;
+  }).join("") : '<div class="hint">No versions yet.</div>';
+
+  const newDraftBtn = document.getElementById("fwNewDraft");
+  if (newDraftBtn) newDraftBtn.onclick = async () => {
+    const base = ACTIVE_FRAMEWORK ? ACTIVE_FRAMEWORK.config : seedFrameworkConfig();
+    const nextVer = nextDraftVersionNumber();
+    const draftV = makeFrameworkVersion(nextVer, "draft", JSON.parse(JSON.stringify(base)));
+    await idbPut("framework", draftV);
+    FRAMEWORK_VERSIONS.push(draftV);
+    fwEditorDraftId = draftV.id;
+    renderFrameworkEditor(body);
+  };
+  const publishBtn = document.getElementById("fwPublishDraft");
+  if (publishBtn) publishBtn.onclick = async () => {
+    if (!confirm("Publish this draft? It becomes the active framework for NEW trades. Existing trades are unaffected.")) return;
+    draft.status = "published";
+    draft.publishedAt = new Date().toISOString();
+    await idbPut("framework", draft);
+    ACTIVE_FRAMEWORK = draft;
+    SETTINGS.activeFrameworkVersionId = draft.id;
+    await idbPut("kv", SETTINGS);
+    fwEditorDraftId = null;
+    renderFrameworkEditor(body);
+    toast("Draft published and set active.");
+  };
+  const discardBtn = document.getElementById("fwDiscardDraft");
+  if (discardBtn) discardBtn.onclick = async () => {
+    if (!confirm("Discard this draft? Its unpublished changes are lost.")) return;
+    await idbDelete("framework", draft.id);
+    FRAMEWORK_VERSIONS = FRAMEWORK_VERSIONS.filter(v => v.id !== draft.id);
+    fwEditorDraftId = null;
+    renderFrameworkEditor(body);
+    toast("Draft discarded.");
+  };
+  list.querySelectorAll("[data-editver]").forEach(b => b.onclick = () => { fwEditorDraftId = b.dataset.editver; renderFrameworkEditor(body); });
+  list.querySelectorAll("[data-activate]").forEach(b => b.onclick = async () => {
+    const v = frameworkVersionById(b.dataset.activate);
+    if (!v) return;
+    ACTIVE_FRAMEWORK = v; SETTINGS.activeFrameworkVersionId = v.id; await idbPut("kv", SETTINGS);
+    renderFrameworkEditor(body); toast("Active version updated.");
+  });
+  list.querySelectorAll("[data-lock]").forEach(b => b.onclick = async () => {
+    const v = frameworkVersionById(b.dataset.lock);
+    if (!v) return;
+    if (!confirm("Lock V" + v.version + "? It becomes permanently read-only.")) return;
+    v.status = "locked"; await idbPut("framework", v);
+    renderFrameworkEditor(body); toast("Version locked.");
+  });
+
+  // If a draft is being edited, show the editing surface.
+  const editArea = document.getElementById("fwEditArea");
+  const editingDraft = fwEditorDraftId ? frameworkVersionById(fwEditorDraftId) : (draft || null);
+  if (editingDraft && editingDraft.status === "draft") {
+    renderDraftEditor(editArea, editingDraft, body);
+  } else {
+    editArea.innerHTML = `<div class="card"><div class="hint">Select or create a Draft to edit the framework. The active configuration is shown read-only below.</div>
+      <div style="margin-top:10px;">${renderConfigReadonly(active ? active.config : seedFrameworkConfig())}</div></div>`;
+  }
+}
+
+function nextDraftVersionNumber() {
+  // Simple bump: max integer major + 1 decimal step. Uses X.Y numbering.
+  let maxMajor = 1, maxMinor = 0;
+  FRAMEWORK_VERSIONS.forEach(v => {
+    const parts = String(v.version).split(".");
+    const maj = parseInt(parts[0], 10) || 1;
+    const min = parseInt(parts[1], 10) || 0;
+    if (maj > maxMajor || (maj === maxMajor && min > maxMinor)) { maxMajor = maj; maxMinor = min; }
+  });
+  return maxMajor + "." + (maxMinor + 1);
+}
+
+function renderConfigReadonly(config) {
+  const modelLines = config.biasModels.map(m => `${esc(m.name)}${m.enabled ? "" : " (disabled)"} — ${enabledChecklist(m).length} item(s)`).join("<br>");
+  const poi = config.c2Intraday.poiOptions.filter(o => o.enabled).map(o => esc(o.label)).join(", ");
+  const tf = config.c2Intraday.tfOptions.filter(o => o.enabled).map(o => esc(o.label)).join(", ");
+  const scn = config.c2Intraday.scenarios.filter(o => o.enabled).map(o => esc(o.label)).join(", ");
+  const sess = config.triggerSessions.map(s => `${esc(s.name)}${s.enabled ? "" : " (disabled)"} — ${enabledChecklist(s).length} item(s)`).join("<br>");
+  return `
+    <div class="kv"><span class="k">Bias Models</span></div><div class="meta" style="margin-bottom:8px;">${modelLines}</div>
+    <div class="kv"><span class="k">POI options</span><span class="v" style="white-space:normal;text-align:right;">${poi||'—'}</span></div>
+    <div class="kv"><span class="k">TF options</span><span class="v" style="white-space:normal;text-align:right;">${tf||'—'}</span></div>
+    <div class="kv"><span class="k">Scenarios</span><span class="v" style="white-space:normal;text-align:right;">${scn||'—'}</span></div>
+    <div class="kv"><span class="k">Trigger Sessions</span></div><div class="meta">${sess}</div>
+  `;
+}
+
+/* ---- Draft editing surface ---- */
+let fwEditSection = "bias";
+function renderDraftEditor(area, draftV, rootBody) {
+  const cfg = draftV.config;
+  area.innerHTML = `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div class="section-title" style="margin:0;">Editing Draft V${esc(draftV.version)} <span class="pill draft">DRAFT</span></div>
+      </div>
+      <div class="tabs" style="margin-top:10px;">
+        ${[["bias","Bias Models"],["poi","POI"],["tf","TF"],["scenario","Scenario"],["trigger","Trigger Sessions"]]
+          .map(([k,l]) => `<div class="tab ${fwEditSection===k?'active':''}" data-sec="${k}">${l}</div>`).join("")}
+      </div>
+      <div id="fwSectionBody"></div>
+    </div>
+  `;
+  area.querySelectorAll(".tab[data-sec]").forEach(t => t.onclick = () => { fwEditSection = t.dataset.sec; renderDraftEditor(area, draftV, rootBody); });
+  const sb = document.getElementById("fwSectionBody");
+  const persist = async () => { await idbPut("framework", draftV); };
+  const rerender = () => renderDraftEditor(area, draftV, rootBody);
+
+  if (fwEditSection === "bias") renderBiasEditor(sb, cfg, persist, rerender);
+  else if (fwEditSection === "poi") renderOptionListEditor(sb, cfg.c2Intraday.poiOptions, "POI option", persist, rerender, "poi");
+  else if (fwEditSection === "tf") renderOptionListEditor(sb, cfg.c2Intraday.tfOptions, "TF option", persist, rerender, "tf");
+  else if (fwEditSection === "scenario") renderOptionListEditor(sb, cfg.c2Intraday.scenarios, "Scenario", persist, rerender, "scn");
+  else if (fwEditSection === "trigger") renderSessionEditor(sb, cfg, persist, rerender);
+}
+
+/* Generic option list editor (POI / TF / Scenario): add, rename, enable/disable, reorder, remove */
+function renderOptionListEditor(container, arr, label, persist, rerender, idPrefix) {
+  const sorted = arr.slice().sort(_byOrder);
+  container.innerHTML = `
+    <p class="hint">${esc(label)} options. Disable to hide from new trades while keeping old trades intact. Order controls display order.</p>
+    <div id="optList">
+      ${sorted.map(o => `
+        <div class="fw-cfg-item ${o.enabled ? "" : "disabled"}">
+          <div class="ord-btns"><button data-up="${esc(o.id)}">▲</button><button data-down="${esc(o.id)}">▼</button></div>
+          <div class="grow"><input type="text" data-name="${esc(o.id)}" value="${esc(o.label)}" style="margin-bottom:2px;"><div class="meta">${esc(o.id)}</div></div>
+          <button class="btn sm" data-toggle="${esc(o.id)}">${o.enabled ? "Disable" : "Enable"}</button>
+          <button class="btn sm danger" data-remove="${esc(o.id)}">Remove</button>
+        </div>`).join("")}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <input type="text" id="newOptLabel" placeholder="New ${esc(label)} label...">
+      <button class="btn primary" id="addOpt">Add</button>
+    </div>
+  `;
+  container.querySelectorAll("[data-name]").forEach(inp => inp.onchange = async () => {
+    const o = arr.find(x => x.id === inp.dataset.name); if (o) { o.label = inp.value; await persist(); }
+  });
+  container.querySelectorAll("[data-toggle]").forEach(b => b.onclick = async () => {
+    const o = arr.find(x => x.id === b.dataset.toggle); if (o) { o.enabled = !o.enabled; await persist(); rerender(); }
+  });
+  container.querySelectorAll("[data-remove]").forEach(b => b.onclick = async () => {
+    if (!confirm("Remove this option? Historical trades that used it still display it correctly.")) return;
+    const idx = arr.findIndex(x => x.id === b.dataset.remove); if (idx >= 0) { arr.splice(idx, 1); await persist(); rerender(); }
+  });
+  container.querySelectorAll("[data-up]").forEach(b => b.onclick = async () => { reorderById(arr, b.dataset.up, -1); await persist(); rerender(); });
+  container.querySelectorAll("[data-down]").forEach(b => b.onclick = async () => { reorderById(arr, b.dataset.down, +1); await persist(); rerender(); });
+  container.querySelector("#addOpt").onclick = async () => {
+    const val = container.querySelector("#newOptLabel").value.trim();
+    if (!val) return;
+    const maxOrder = arr.reduce((m, o) => Math.max(m, o.order || 0), 0);
+    arr.push({ id: idPrefix + "_" + uuid().slice(0, 8), label: val, enabled: true, order: maxOrder + 1 });
+    await persist(); rerender();
+  };
+}
+
+function reorderById(arr, id, dir) {
+  const sorted = arr.slice().sort(_byOrder);
+  const i = sorted.findIndex(x => x.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= sorted.length) return;
+  const a = sorted[i], b = sorted[j];
+  const tmp = a.order; a.order = b.order; b.order = tmp;
+}
+
+/* Bias model editor: add/rename/enable/disable/reorder models; edit each model's checklist */
+function renderBiasEditor(container, cfg, persist, rerender) {
+  const models = cfg.biasModels.slice().sort(_byOrder);
+  container.innerHTML = `
+    <p class="hint">Bias models. Each model has its own checklist. A model is "confirmed" on a trade only when all its enabled + required items are checked.</p>
+    <div>
+      ${models.map(m => `
+        <div class="fw-cfg-item ${m.enabled ? "" : "disabled"}" style="flex-wrap:wrap;">
+          <div class="ord-btns"><button data-up="${esc(m.id)}">▲</button><button data-down="${esc(m.id)}">▼</button></div>
+          <div class="grow">
+            <input type="text" data-mname="${esc(m.id)}" value="${esc(m.name)}" style="margin-bottom:2px;">
+            <input type="text" data-mdesc="${esc(m.id)}" value="${esc(m.description||'')}" placeholder="description (optional)" style="margin-bottom:2px;">
+            <div class="meta">${esc(m.id)} · ${enabledChecklist(m).length} enabled item(s)</div>
+          </div>
+          <button class="btn sm" data-mtoggle="${esc(m.id)}">${m.enabled ? "Disable" : "Enable"}</button>
+          <button class="btn sm" data-mchecklist="${esc(m.id)}">Checklist</button>
+          <button class="btn sm danger" data-mremove="${esc(m.id)}">Remove</button>
+          <div style="flex-basis:100%;" id="checklist_${esc(m.id)}"></div>
+        </div>`).join("")}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <input type="text" id="newModelName" placeholder="New bias model name...">
+      <button class="btn primary" id="addModel">Add Model</button>
+    </div>
+  `;
+  container.querySelectorAll("[data-mname]").forEach(inp => inp.onchange = async () => { const m = cfg.biasModels.find(x => x.id === inp.dataset.mname); if (m) { m.name = inp.value; await persist(); } });
+  container.querySelectorAll("[data-mdesc]").forEach(inp => inp.onchange = async () => { const m = cfg.biasModels.find(x => x.id === inp.dataset.mdesc); if (m) { m.description = inp.value; await persist(); } });
+  container.querySelectorAll("[data-mtoggle]").forEach(b => b.onclick = async () => { const m = cfg.biasModels.find(x => x.id === b.dataset.mtoggle); if (m) { m.enabled = !m.enabled; await persist(); rerender(); } });
+  container.querySelectorAll("[data-mremove]").forEach(b => b.onclick = async () => {
+    if (!confirm("Remove this bias model? Historical trades that used it still display correctly.")) return;
+    const idx = cfg.biasModels.findIndex(x => x.id === b.dataset.mremove); if (idx >= 0) { cfg.biasModels.splice(idx, 1); await persist(); rerender(); }
+  });
+  container.querySelectorAll("[data-up]").forEach(b => b.onclick = async () => { reorderById(cfg.biasModels, b.dataset.up, -1); await persist(); rerender(); });
+  container.querySelectorAll("[data-down]").forEach(b => b.onclick = async () => { reorderById(cfg.biasModels, b.dataset.down, +1); await persist(); rerender(); });
+  container.querySelectorAll("[data-mchecklist]").forEach(b => b.onclick = () => {
+    const m = cfg.biasModels.find(x => x.id === b.dataset.mchecklist);
+    const target = document.getElementById("checklist_" + m.id);
+    if (target.innerHTML) { target.innerHTML = ""; return; }
+    renderChecklistEditor(target, m, persist, rerender);
+  });
+  container.querySelector("#addModel").onclick = async () => {
+    const val = container.querySelector("#newModelName").value.trim();
+    if (!val) return;
+    const maxOrder = cfg.biasModels.reduce((mx, m) => Math.max(mx, m.order || 0), 0);
+    cfg.biasModels.push({ id: "bias_" + uuid().slice(0, 8), name: val, enabled: true, order: maxOrder + 1, description: "", checklist: [] });
+    await persist(); rerender();
+  };
+}
+
+/* Session editor mirrors bias editor (name + checklist) */
+function renderSessionEditor(container, cfg, persist, rerender) {
+  const sessions = cfg.triggerSessions.slice().sort(_byOrder);
+  container.innerHTML = `
+    <p class="hint">Trigger sessions (Entry Model). Each session has its own checklist. Kept under the name "Trigger" throughout the app.</p>
+    <div>
+      ${sessions.map(s => `
+        <div class="fw-cfg-item ${s.enabled ? "" : "disabled"}" style="flex-wrap:wrap;">
+          <div class="ord-btns"><button data-up="${esc(s.id)}">▲</button><button data-down="${esc(s.id)}">▼</button></div>
+          <div class="grow">
+            <input type="text" data-sname="${esc(s.id)}" value="${esc(s.name)}" style="margin-bottom:2px;">
+            <div class="meta">${esc(s.id)} · ${enabledChecklist(s).length} enabled item(s)</div>
+          </div>
+          <button class="btn sm" data-stoggle="${esc(s.id)}">${s.enabled ? "Disable" : "Enable"}</button>
+          <button class="btn sm" data-schecklist="${esc(s.id)}">Checklist</button>
+          <button class="btn sm danger" data-sremove="${esc(s.id)}">Remove</button>
+          <div style="flex-basis:100%;" id="schecklist_${esc(s.id)}"></div>
+        </div>`).join("")}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <input type="text" id="newSessName" placeholder="New session name...">
+      <button class="btn primary" id="addSess">Add Session</button>
+    </div>
+  `;
+  container.querySelectorAll("[data-sname]").forEach(inp => inp.onchange = async () => { const s = cfg.triggerSessions.find(x => x.id === inp.dataset.sname); if (s) { s.name = inp.value; await persist(); } });
+  container.querySelectorAll("[data-stoggle]").forEach(b => b.onclick = async () => { const s = cfg.triggerSessions.find(x => x.id === b.dataset.stoggle); if (s) { s.enabled = !s.enabled; await persist(); rerender(); } });
+  container.querySelectorAll("[data-sremove]").forEach(b => b.onclick = async () => {
+    if (!confirm("Remove this session? Historical trades that used it still display correctly.")) return;
+    const idx = cfg.triggerSessions.findIndex(x => x.id === b.dataset.sremove); if (idx >= 0) { cfg.triggerSessions.splice(idx, 1); await persist(); rerender(); }
+  });
+  container.querySelectorAll("[data-up]").forEach(b => b.onclick = async () => { reorderById(cfg.triggerSessions, b.dataset.up, -1); await persist(); rerender(); });
+  container.querySelectorAll("[data-down]").forEach(b => b.onclick = async () => { reorderById(cfg.triggerSessions, b.dataset.down, +1); await persist(); rerender(); });
+  container.querySelectorAll("[data-schecklist]").forEach(b => b.onclick = () => {
+    const s = cfg.triggerSessions.find(x => x.id === b.dataset.schecklist);
+    const target = document.getElementById("schecklist_" + s.id);
+    if (target.innerHTML) { target.innerHTML = ""; return; }
+    renderChecklistEditor(target, s, persist, rerender);
+  });
+  container.querySelector("#addSess").onclick = async () => {
+    const val = container.querySelector("#newSessName").value.trim();
+    if (!val) return;
+    const maxOrder = cfg.triggerSessions.reduce((mx, s) => Math.max(mx, s.order || 0), 0);
+    cfg.triggerSessions.push({ id: "sess_" + uuid().slice(0, 8), name: val, enabled: true, order: maxOrder + 1, checklist: [] });
+    await persist(); rerender();
+  };
+}
+
+/* Checklist editor shared by bias models and sessions */
+function renderChecklistEditor(container, parent, persist, rerender) {
+  const items = (parent.checklist || []).slice().sort(_byOrder);
+  container.innerHTML = `
+    <div style="border:1px dashed var(--border);border-radius:var(--radius);padding:10px;margin-top:8px;">
+      <div class="meta" style="margin-bottom:6px;">Checklist items — required items must all be checked for the model/session to be "confirmed".</div>
+      ${items.map(c => `
+        <div class="fw-cfg-item ${c.enabled ? "" : "disabled"}">
+          <div class="ord-btns"><button data-cup="${esc(c.id)}">▲</button><button data-cdown="${esc(c.id)}">▼</button></div>
+          <div class="grow"><input type="text" data-clabel="${esc(c.id)}" value="${esc(c.label)}"><div class="meta">${esc(c.id)}</div></div>
+          <label class="meta" style="display:flex;align-items:center;gap:4px;"><input type="checkbox" data-creq="${esc(c.id)}" ${c.required ? "checked" : ""}> req</label>
+          <button class="btn sm" data-ctoggle="${esc(c.id)}">${c.enabled ? "Disable" : "Enable"}</button>
+          <button class="btn sm danger" data-cremove="${esc(c.id)}">✕</button>
+        </div>`).join("")}
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <input type="text" data-newitem placeholder="New checklist item...">
+        <button class="btn sm primary" data-additem>Add Item</button>
+      </div>
+    </div>
+  `;
+  container.querySelectorAll("[data-clabel]").forEach(inp => inp.onchange = async () => { const c = parent.checklist.find(x => x.id === inp.dataset.clabel); if (c) { c.label = inp.value; await persist(); } });
+  container.querySelectorAll("[data-creq]").forEach(cb => cb.onchange = async () => { const c = parent.checklist.find(x => x.id === cb.dataset.creq); if (c) { c.required = cb.checked; await persist(); } });
+  container.querySelectorAll("[data-ctoggle]").forEach(b => b.onclick = async () => { const c = parent.checklist.find(x => x.id === b.dataset.ctoggle); if (c) { c.enabled = !c.enabled; await persist(); reopenChecklist(container, parent, persist, rerender); } });
+  container.querySelectorAll("[data-cremove]").forEach(b => b.onclick = async () => { const idx = parent.checklist.findIndex(x => x.id === b.dataset.cremove); if (idx >= 0) { parent.checklist.splice(idx, 1); await persist(); reopenChecklist(container, parent, persist, rerender); } });
+  container.querySelectorAll("[data-cup]").forEach(b => b.onclick = async () => { reorderById(parent.checklist, b.dataset.cup, -1); await persist(); reopenChecklist(container, parent, persist, rerender); });
+  container.querySelectorAll("[data-cdown]").forEach(b => b.onclick = async () => { reorderById(parent.checklist, b.dataset.cdown, +1); await persist(); reopenChecklist(container, parent, persist, rerender); });
+  container.querySelector("[data-additem]").onclick = async () => {
+    const inp = container.querySelector("[data-newitem]");
+    const val = inp.value.trim(); if (!val) return;
+    if (!parent.checklist) parent.checklist = [];
+    const maxOrder = parent.checklist.reduce((m, c) => Math.max(m, c.order || 0), 0);
+    parent.checklist.push({ id: "chk_" + uuid().slice(0, 8), label: val, enabled: true, required: true, order: maxOrder + 1 });
+    await persist(); reopenChecklist(container, parent, persist, rerender);
+  };
+}
+function reopenChecklist(container, parent, persist, rerender) {
+  renderChecklistEditor(container, parent, persist, rerender);
+}
+/* ---------------------------------------------------------------------
+   15. DEMO DATA (uses the new id-based framework fields)
+   --------------------------------------------------------------------- */
+async function generateDemoTrades() {
+  if (!ACCOUNTS.length) {
+    const demoAcc = blankAccount({ name: "Demo Account", accountSize: 100000, startingBalance: 100000, maxDrawdown: 3000, defaultInstrument: "NQ" });
+    await saveAccount(demoAcc);
+  }
+  const accId = getActiveAccounts()[0].id;
+  const models = activeBiasModels();
+  const sessions = activeTriggerSessions();
+  const pois = activePOIOptions();
+  const tfs = activeTFOptions();
+  const scns = activeScenarios();
+  const sessionNames = ["Asia", "London", "New York"];
+  const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const demoTrades = [];
+  const today = new Date();
+  for (let i = 0; i < 40; i++) {
     const t = blankTrade();
-    t.isDemo = true;
-    const d = new Date(); d.setDate(d.getDate() - (24 - i) * 2);
+    const d = new Date(today); d.setDate(d.getDate() - (40 - i));
+    t.accountId = accId;
     t.date = d.toISOString().slice(0, 10);
-    t.session = sessions[i % sessions.length];
-    t.instrument = ["NQ","MNQ","ES","MES"][i % 4];
-    t.direction = i % 2 === 0 ? "Long" : "Short";
-    const bias = biases[i % biases.length];
-    t.framework.bias = bias;
-    t.marketContext.dailyBias = bias;
-    const conf = FRAMEWORK.confirmations[bias];
-    t.framework.confirmationTitle = conf.title;
-    conf.checks.forEach((c, idx) => { t.framework.confirmationChecks[c.id] = idx !== conf.checks.length - 1 || i % 3 !== 0; });
-    const relevantTriggers = FRAMEWORK.triggers.filter(tr => tr.session === t.session);
-    const trig = (relevantTriggers.length ? relevantTriggers : FRAMEWORK.triggers)[i % (relevantTriggers.length || FRAMEWORK.triggers.length)];
-    t.framework.trigger = trig.label;
-    trig.checks.forEach(c => { t.framework.triggerChecks[c.id] = true; });
-    t.marketContext.marketCondition = MARKET_CONDITIONS[i % MARKET_CONDITIONS.length];
+    t.time = String(6 + (i % 8)).padStart(2, "0") + ":30";
+    t.session = rand(sessionNames);
+    t.instrument = "NQ";
+    t.direction = rand(["Long", "Short"]);
+    t.marketContext.marketCondition = rand(MARKET_CONDITIONS);
+
+    const model = rand(models);
+    if (model) {
+      t.framework.biasModelId = model.id;
+      t.framework.biasName = model.name;
+      t.framework.bias = model.name;
+      t.framework.confirmationTitle = model.name;
+      t.marketContext.dailyBias = model.name;
+      enabledChecklist(model).forEach(c => { t.framework.confirmationChecks[c.id] = Math.random() > 0.2; });
+    }
+    const sess = rand(sessions);
+    if (sess) {
+      t.framework.triggerSessionId = sess.id;
+      t.framework.triggerName = sess.name;
+      t.framework.trigger = sess.name;
+      enabledChecklist(sess).forEach(c => { t.framework.triggerChecks[c.id] = Math.random() > 0.2; });
+    }
+    // C2 Intraday (multi-select POI + single TF/scenario)
+    const nP = 1 + Math.floor(Math.random() * 2);
+    const chosen = [];
+    for (let k = 0; k < nP && pois.length; k++) { const p = rand(pois); if (!chosen.includes(p.id)) chosen.push(p.id); }
+    t.c2Intraday.whichPOI = chosen;
+    if (tfs.length) t.c2Intraday.whichTF = rand(tfs).id;
+    if (scns.length) t.c2Intraday.scenario = rand(scns).id;
+
     const risk = 200;
-    t.execution.risk = risk; t.execution.contracts = 2; t.execution.entry = 100; t.execution.stopLoss = 95; t.execution.target = 115;
-    t.execution.plannedRR = "3.00";
-    const win = i % 3 !== 0;
-    const r = win ? (1 + (i % 3)) : -1;
-    t.management.finalR = r.toFixed(2);
-    t.management.finalPnL = (r * risk).toFixed(2);
-    t.management.exitType = win ? "TP" : "SL";
-    t.executionReview.contextScore = 14; t.executionReview.frameworkScore = 16; t.executionReview.entryScore = 15;
-    t.executionReview.riskScore = 15; t.executionReview.managementScore = i % 4 === 0 ? 8 : 16;
-    t.executionReview.ruleBreak = i % 7 === 0 ? "YES" : "NO";
-    if (t.executionReview.ruleBreak === "YES") t.executionReview.ruleBreakDescription = "Entered before full confirmation.";
-    t.review.followedPlan = t.executionReview.ruleBreak === "NO";
-    t.review.validSetup = i % 5 !== 0;
-    t.review.lesson = "Demo data — replace with real trades.";
-    out.push(deriveTrade(t));
+    t.execution.entry = (15000 + Math.random() * 500).toFixed(2);
+    t.execution.stopLoss = (Number(t.execution.entry) - 20).toFixed(2);
+    t.execution.target = (Number(t.execution.entry) + 40).toFixed(2);
+    t.execution.contracts = 2;
+    t.execution.pointValue = 5;
+    t.execution.risk = risk;
+    const rr = Math.random();
+    const finalR = rr > 0.45 ? (1 + Math.random() * 2) : -(0.6 + Math.random() * 0.6);
+    t.management.finalR = finalR.toFixed(2);
+    t.management.finalPnL = (finalR * risk).toFixed(2);
+    t.management.exitType = finalR > 0 ? "TP" : "SL";
+    t.executionReview.contextScore = 12 + Math.floor(Math.random() * 8);
+    t.executionReview.frameworkScore = 12 + Math.floor(Math.random() * 8);
+    t.executionReview.entryScore = 12 + Math.floor(Math.random() * 8);
+    t.executionReview.riskScore = 12 + Math.floor(Math.random() * 8);
+    t.executionReview.managementScore = 12 + Math.floor(Math.random() * 8);
+    t.executionReview.ruleBreak = Math.random() > 0.85 ? "YES" : "NO";
+    t.review.followedPlan = Math.random() > 0.2;
+    t.review.validSetup = Math.random() > 0.25;
+    t.entryExecutionStyle = rand(["Aggressive", "Conservative", null]);
+    t.isDemo = true;
+    deriveTrade(t);
+    demoTrades.push(t);
   }
-  return out;
+  for (const t of demoTrades) { await idbPut("trades", t); TRADES.push(t); }
+  toast("Demo data generated (40 trades).");
 }
 
 /* ---------------------------------------------------------------------
-   16. INIT
+   16. MIGRATION + INIT
    --------------------------------------------------------------------- */
-async function loadAllData() {
-  TRADES = await idbGetAll("trades");
-  // Backward compatibility: trades saved before entryExecutionStyle existed have no such
-  // property. Treat them as unclassified (null) in memory. Nothing is written back to the
-  // database and no historical trade is ever auto-classified or guessed.
-  TRADES.forEach(t => { if (t.entryExecutionStyle === undefined) t.entryExecutionStyle = null; });
-  PLAYBOOKS = await idbGetAll("playbook");
-  REVIEWS = await idbGetAll("weeklyReviews");
-  ACCOUNTS = await idbGetAll("accounts");
-  let s = await idbGet("kv", "settings");
-  if (!s) { s = defaultSettings(); await idbPut("kv", s); }
-  SETTINGS = { ...defaultSettings(), ...s, account: { ...defaultSettings().account, ...(s.account||{}) }, journal: { ...defaultSettings().journal, ...(s.journal||{}) }, display: { ...defaultSettings().display, ...(s.display||{}) }, riskControl: { ...defaultSettings().riskControl, ...(s.riskControl||{}) } };
-  applyDisplaySettings();
-  await migrateAccountsIfNeeded();
-}
 
-/* ---------------------------------------------------------------------
-   16b. ACCOUNT MIGRATION (idempotent — safe to run on every load)
-   Runs only when ACCOUNTS is empty, so it never re-creates an Account
-   or re-imports Trades once migration has happened once. Never deletes
-   or overwrites existing Trades — only fills in a missing accountId.
-   --------------------------------------------------------------------- */
-async function migrateAccountsIfNeeded() {
-  // Step 1: if no Accounts exist yet, create exactly one from the legacy
-  // single-account Settings block so no existing configuration is lost.
-  if (ACCOUNTS.length === 0) {
-    const legacy = SETTINGS.account || {};
-    const migrated = blankAccount({
-      name: legacy.accountName || "My Account",
-      accountSize: legacy.accountSize || 0,
-      startingBalance: legacy.startingBalance || 0,
-      profitTarget: legacy.profitTarget || 0,
-      maxDrawdown: legacy.maxDrawdown || 0,
-      dailyLossLimit: legacy.dailyLossLimit || 0,
-      riskPerTrade: legacy.riskPerTrade || 0,
-      defaultContract: legacy.defaultContract || "",
-      defaultInstrument: legacy.defaultInstrument || ""
-    });
-    await idbPut("accounts", migrated);
-    ACCOUNTS.push(migrated);
-  }
-
-  // Step 2: any Trade without a valid accountId (pre-patch Trades, or
-  // legacy imports) gets attached to a safe default Account. Existing
-  // Trade content is never rewritten beyond adding this one field.
-  const fallbackId = getPreferredAccountId();
-  const orphans = TRADES.filter(t => !t.accountId || !getAccountById(t.accountId));
-  if (orphans.length && fallbackId) {
-    for (const t of orphans) {
-      t.accountId = fallbackId;
-      await idbPut("trades", t);
+// Ensure a trade object has all current fields (in memory only — never rewrites
+// legacy trade data on disk unless the trade is subsequently saved by the user).
+// Adds new containers with safe defaults so old trades render without errors.
+function migrateTradeShape(t) {
+  if (!t.framework) t.framework = {};
+  if (t.framework.biasModelId === undefined) t.framework.biasModelId = "";
+  if (t.framework.triggerSessionId === undefined) t.framework.triggerSessionId = "";
+  if (!t.framework.confirmationChecks) t.framework.confirmationChecks = {};
+  if (!t.framework.triggerChecks) t.framework.triggerChecks = {};
+  if (t.framework.biasName === undefined) t.framework.biasName = t.framework.bias || "";
+  if (t.framework.triggerName === undefined) t.framework.triggerName = t.framework.trigger || "";
+  if (t.framework.bias === undefined) t.framework.bias = "";
+  if (t.framework.confirmationTitle === undefined) t.framework.confirmationTitle = "";
+  if (t.framework.trigger === undefined) t.framework.trigger = "";
+  if (t.frameworkVersionId === undefined) t.frameworkVersionId = null; // legacy marker
+  if (!t.c2Intraday) t.c2Intraday = { whichPOI: [], whichTF: "", scenario: "" };
+  if (!Array.isArray(t.c2Intraday.whichPOI)) {
+    // Defensive: if an old export stored a comma string, split it back to an array.
+    if (typeof t.c2Intraday.whichPOI === "string" && t.c2Intraday.whichPOI) {
+      t.c2Intraday.whichPOI = t.c2Intraday.whichPOI.split(",").map(s => s.trim()).filter(Boolean);
+    } else {
+      t.c2Intraday.whichPOI = [];
     }
   }
+  if (t.c2Intraday.whichTF === undefined) t.c2Intraday.whichTF = "";
+  if (t.c2Intraday.scenario === undefined) t.c2Intraday.scenario = "";
+  if (t.entryExecutionStyle === undefined) t.entryExecutionStyle = null;
+  if (!t.screenshots) t.screenshots = { before: null, entry: null, after: null };
+  return t;
+}
 
-  // Step 3: make sure a lastAccountId preference is set so New Trade has a sane default.
-  if (!SETTINGS.lastAccountId || !getAccountById(SETTINGS.lastAccountId)) {
-    const preferred = getPreferredAccountId();
-    if (preferred) { SETTINGS.lastAccountId = preferred; await idbPut("kv", SETTINGS); }
+// Create the seed framework version if the framework store is empty.
+// Never rewrites historical trades — legacy trades keep frameworkVersionId=null.
+async function migrateFrameworkIfNeeded() {
+  const stored = await idbGetAll("framework");
+  FRAMEWORK_VERSIONS = stored || [];
+  if (!FRAMEWORK_VERSIONS.length) {
+    const v1 = makeFrameworkVersion("1.0", "published", seedFrameworkConfig());
+    await idbPut("framework", v1);
+    FRAMEWORK_VERSIONS = [v1];
+    ACTIVE_FRAMEWORK = v1;
+    SETTINGS.activeFrameworkVersionId = v1.id;
+    await idbPut("kv", SETTINGS);
+    return;
+  }
+  // Resolve active version: settings pointer -> first published -> first any.
+  let active = null;
+  if (SETTINGS.activeFrameworkVersionId) active = frameworkVersionById(SETTINGS.activeFrameworkVersionId);
+  if (!active) active = FRAMEWORK_VERSIONS.find(v => v.status === "published");
+  if (!active) active = FRAMEWORK_VERSIONS.find(v => v.status === "locked");
+  if (!active) active = FRAMEWORK_VERSIONS[0];
+  ACTIVE_FRAMEWORK = active || null;
+  if (ACTIVE_FRAMEWORK && SETTINGS.activeFrameworkVersionId !== ACTIVE_FRAMEWORK.id) {
+    SETTINGS.activeFrameworkVersionId = ACTIVE_FRAMEWORK.id;
+    await idbPut("kv", SETTINGS);
   }
 }
 
-window.addEventListener("DOMContentLoaded", async () => {
-  try {
-    await openDB();
-    await loadAllData();
-  } catch (err) {
-    // Last-resort safety net: never leave the user on a stuck loading screen.
-    USE_MEMORY_FALLBACK = true;
-    try { await loadAllData(); } catch (err2) { /* even the in-memory path failed to init; router() below still renders the shell */ }
+async function migrateAccountsIfNeeded() {
+  // If there are trades but no accounts (legacy single-account data), create a
+  // default account from settings and attach orphan trades to it.
+  if (ACCOUNTS.length === 0) {
+    const legacy = (SETTINGS && SETTINGS.account) ? SETTINGS.account : null;
+    const acc = blankAccount({
+      name: legacy && legacy.accountName ? legacy.accountName : "My Account",
+      accountSize: legacy ? legacy.accountSize : 100000,
+      startingBalance: legacy ? legacy.startingBalance : 100000,
+      maxDrawdown: legacy ? legacy.maxDrawdown : 0,
+      defaultInstrument: legacy ? legacy.defaultInstrument : "NQ"
+    });
+    // Only persist a default account if there is existing trade data to attach,
+    // or nothing at all (fresh install still benefits from one account).
+    await saveAccount(acc);
+    let changed = false;
+    TRADES.forEach(t => { if (!t.accountId) { t.accountId = acc.id; changed = true; } });
+    if (changed) { for (const t of TRADES) await idbPut("trades", t); }
+  } else {
+    // Attach any orphan trades to the first active account.
+    const firstAcc = getActiveAccounts()[0] || ACCOUNTS[0];
+    if (firstAcc) {
+      let changed = false;
+      TRADES.forEach(t => { if (!t.accountId) { t.accountId = firstAcc.id; changed = true; } });
+      if (changed) { for (const t of TRADES) await idbPut("trades", t); }
+    }
   }
-  router();
-  if (USE_MEMORY_FALLBACK) showStorageFallbackBanner();
-});
+}
+
+async function loadAllData() {
+  await openDB();
+  // Settings
+  const storedSettings = await idbGet("kv", "settings");
+  SETTINGS = storedSettings || defaultSettings();
+  // Merge any newly added default keys into an older settings object.
+  const defs = defaultSettings();
+  for (const k of Object.keys(defs)) { if (SETTINGS[k] === undefined) SETTINGS[k] = defs[k]; }
+  if (SETTINGS.riskControl === undefined) SETTINGS.riskControl = defs.riskControl;
+
+  // Core stores
+  ACCOUNTS = (await idbGetAll("accounts")) || [];
+  TRADES = (await idbGetAll("trades")) || [];
+  PLAYBOOKS = (await idbGetAll("playbook")) || [];
+  REVIEWS = (await idbGetAll("weeklyReviews")) || [];
+
+  // Shape-migrate trades in memory so old trades render with new fields.
+  TRADES = TRADES.map(migrateTradeShape);
+
+  // Framework config + versions (seed V1.0 if empty).
+  await migrateFrameworkIfNeeded();
+
+  // Accounts migration (legacy single-account data).
+  await migrateAccountsIfNeeded();
+
+  applyDisplaySettings();
+}
 
 function showStorageFallbackBanner() {
-  const bar = document.createElement("div");
-  bar.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:300;background:var(--amber-dim);color:var(--amber);border-bottom:1px solid var(--border);padding:9px 16px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:12px;";
-  bar.innerHTML = `<span>Persistent storage isn't available in this preview, so trades entered here won't be saved after a refresh. Download this file and open it directly in your browser (double-click it, or drag it into a browser tab) for permanent local storage.</span>`;
-  const closeBtn = document.createElement("button");
-  closeBtn.textContent = "×";
-  closeBtn.style.cssText = "background:none;border:none;color:var(--amber);font-size:18px;cursor:pointer;flex-shrink:0;line-height:1;";
-  closeBtn.onclick = () => bar.remove();
-  bar.appendChild(closeBtn);
-  document.body.prepend(bar);
+  if (!USE_MEMORY_FALLBACK) return;
+  const main = document.getElementById("main-content");
+  const banner = document.createElement("div");
+  banner.className = "reminder-strip";
+  banner.style.borderColor = "var(--amber)";
+  banner.style.color = "var(--amber)";
+  banner.textContent = "Storage note: persistent storage is unavailable in this environment, so data will not survive a page reload here. Everything works normally otherwise — export a backup to keep your data.";
+  const appEl = document.getElementById("app");
+  document.body.insertBefore(banner, appEl);
 }
+
+async function init() {
+  try {
+    await loadAllData();
+  } catch (err) {
+    // Last-resort: switch to memory fallback and seed a framework so the UI loads.
+    USE_MEMORY_FALLBACK = true;
+    SETTINGS = SETTINGS || defaultSettings();
+    if (!FRAMEWORK_VERSIONS.length) {
+      const v1 = makeFrameworkVersion("1.0", "published", seedFrameworkConfig());
+      FRAMEWORK_VERSIONS = [v1]; ACTIVE_FRAMEWORK = v1;
+    }
+  }
+  showStorageFallbackBanner();
+  if (!location.hash) location.hash = "#/dashboard";
+  router();
+}
+
+// Expose a couple of helpers for the Data tab demo button wiring.
+window.__generateDemo = generateDemoTrades;
+
+document.addEventListener("DOMContentLoaded", init);
+
 </script>
 </body>
 </html>
