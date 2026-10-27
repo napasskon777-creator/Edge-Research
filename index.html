@@ -1560,7 +1560,7 @@ function renderC2IntradayStep(body, t) {
     </div>
 
     <div class="field">
-      <label>Which Intraday Scenario <span class="hint">single-select</span></label>
+      <label>Which Scenario TF Entry <span class="hint">single-select</span></label>
       <select id="c2_scenario">
         <option value="">—</option>
         ${scns.map(o => `<option value="${esc(o.id)}" ${t.c2Intraday.scenario===o.id?'selected':''}>${esc(o.label)}</option>`).join("")}
