@@ -2011,6 +2011,7 @@ function openTradeDetail(tradeId) {
         ${shots.length ? `<div><b>Screenshots</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">${shots.map(k => `<a class="btn sm" href="${esc(t.screenshots[k])}" target="_blank" rel="noopener noreferrer" style="text-transform:capitalize;text-decoration:none;">${k} ↗</a>`).join("")}</div></div>` : ""}
         <div class="divider"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn" id="cardTradeBtn">Summary Card</button>
           <button class="btn danger" id="deleteTradeBtn">Delete</button>
           <button class="btn primary" id="editTradeBtn">Edit</button>
         </div>
@@ -2019,6 +2020,7 @@ function openTradeDetail(tradeId) {
   `;
   document.getElementById("closeDetail").onclick = () => root.innerHTML = "";
   document.getElementById("detailBackdrop").onclick = e => { if (e.target.id === "detailBackdrop") root.innerHTML = ""; };
+  document.getElementById("cardTradeBtn").onclick = () => openTradeCard(t.tradeId);
   document.getElementById("editTradeBtn").onclick = () => { root.innerHTML = ""; wizardTrade = null; location.hash = "#/edit-trade/" + t.tradeId; };
   document.getElementById("deleteTradeBtn").onclick = async () => {
     if (confirm("Delete this trade permanently? This cannot be undone.")) {
@@ -3186,6 +3188,409 @@ function renderChecklistEditor(container, parent, persist, rerender) {
 function reopenChecklist(container, parent, persist, rerender) {
   renderChecklistEditor(container, parent, persist, rerender);
 }
+/* ---------------------------------------------------------------------
+   14c. TRADE SUMMARY CARD  (NEW — read-only feature)
+   ---------------------------------------------------------------------
+   Renders one trade as a single shareable image (PNG) using the Canvas API.
+   - No library, works offline, keeps the single-file architecture.
+   - READ-ONLY: never writes to the trade or to IndexedDB.
+   - Uses existing label helpers, so legacy and new-version trades both work.
+   - Nothing is inferred: empty fields show "—", checklist status is computed
+     only from the checks the trader already recorded.
+   Privacy: dollar amounts and account name are OFF by default (card is
+   meant to be shared); the trader can toggle them on.
+   --------------------------------------------------------------------- */
+const CARD_W = 1080, CARD_PAD = 48, CARD_SCALE = 2;
+const CARD_COL = {
+  bg1: "#101A33", bg2: "#0A0D12", text: "#E7EAEE", dim: "#93A0AF", faint: "#6B7787",
+  accent: "#7FA3FF", green: "#33D6A0", red: "#FF6B6B", amber: "#E8A94D",
+  line: "rgba(255,255,255,0.12)", pillBg: "rgba(255,255,255,0.07)"
+};
+const CARD_SANS = "Helvetica, Arial, 'Noto Sans Thai', Tahoma, sans-serif"; // plain quoted names only: parses identically in every browser
+const CARD_MONO = "Menlo, Consolas, 'Courier New', monospace";
+function cf(size, weight, mono) { return (weight || 400) + " " + size + "px " + (mono ? CARD_MONO : CARD_SANS); }
+
+function cardRoundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, h / 2, w / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function cardPill(ctx, x, y, text, o) {
+  o = o || {};
+  ctx.font = o.font || cf(22, 600);
+  const padX = o.padX || 16, h = o.h || 40;
+  const w = ctx.measureText(text).width + padX * 2;
+  cardRoundRect(ctx, x, y, w, h, h / 2);
+  ctx.fillStyle = o.bg || CARD_COL.pillBg; ctx.fill();
+  if (o.border) { ctx.strokeStyle = o.border; ctx.lineWidth = 1.5; ctx.stroke(); }
+  ctx.fillStyle = o.fg || CARD_COL.text;
+  ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  ctx.fillText(text, x + padX, y + h / 2 + 1);
+  ctx.textBaseline = "alphabetic";
+  return w;
+}
+// Flowing chips that wrap onto new rows. Returns the bottom y of the last row.
+function cardChips(ctx, items, x, y, maxX, base) {
+  const h = 40, gap = 10;
+  let cx = x, cy = y;
+  items.forEach(it => {
+    const o = Object.assign({}, base || {}, it);
+    ctx.font = o.font || cf(22, 600);
+    const w = ctx.measureText(it.text).width + 32;
+    if (cx + w > maxX && cx > x) { cx = x; cy += h + gap; }
+    cardPill(ctx, cx, cy, it.text, o);
+    cx += w + gap;
+  });
+  return cy + h;
+}
+function cardLabel(ctx, text, x, y) {
+  ctx.font = cf(17, 600, true); ctx.fillStyle = CARD_COL.faint;
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.fillText(String(text).toUpperCase(), x, y);
+}
+// Tokenizer: real word boundaries (incl. Thai) via Intl.Segmenter when available.
+function cardTokens(par) {
+  try {
+    if (typeof Intl !== "undefined" && Intl.Segmenter) {
+      return Array.from(new Intl.Segmenter("th", { granularity: "word" }).segment(par)).map(x => x.segment);
+    }
+  } catch (e) { /* fall through */ }
+  return par.match(/\S+\s*|\s+/g) || [];
+}
+// Word wrap that also breaks long unspaced text (Thai has no spaces between words).
+function cardWrap(ctx, text, maxW) {
+  const out = [];
+  String(text || "").split(/\r?\n/).forEach(par => {
+    if (!par.trim()) { out.push(""); return; }
+    let line = "";
+    cardTokens(par).forEach(tok => {
+      if (ctx.measureText(line + tok).width <= maxW) { line += tok; return; }
+      if (line) { out.push(line.trimEnd()); line = ""; }
+      if (ctx.measureText(tok).width <= maxW) { line = tok; return; }
+      for (const ch of tok) {
+        if (ctx.measureText(line + ch).width > maxW) { out.push(line); line = ch; } else line += ch;
+      }
+    });
+    if (line) out.push(line.trimEnd());
+  });
+  return out;
+}
+function cardTextBlock(ctx, label, text, y, W, maxLines) {
+  const x = CARD_PAD, mw = W - CARD_PAD * 2;
+  cardLabel(ctx, label, x, y + 18);
+  ctx.font = cf(24, 400); ctx.fillStyle = CARD_COL.text;
+  let lines = cardWrap(ctx, text, mw);
+  if (lines.length > maxLines) {
+    lines = lines.slice(0, maxLines);
+    const last = lines[maxLines - 1];
+    lines[maxLines - 1] = last.slice(0, Math.max(0, last.length - 1)) + "…";
+  }
+  let ly = y + 56;
+  lines.forEach(l => { ctx.fillText(l, x, ly); ly += 36; });
+  return ly + 4;
+}
+// items: [label, value, fontSize?, color?] laid out in a 4-column grid
+function cardStats(ctx, items, y, W) {
+  const cols = 4, colW = (W - CARD_PAD * 2) / cols;
+  let rowY = y;
+  items.forEach((it, i) => {
+    const c = i % cols;
+    if (c === 0 && i > 0) rowY += 92;
+    const x = CARD_PAD + c * colW;
+    cardLabel(ctx, it[0], x, rowY + 16);
+    ctx.font = cf(it[2] || 32, 600, true);
+    ctx.fillStyle = it[3] || CARD_COL.text;
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(String(it[1] === "" || it[1] === null || it[1] === undefined ? "—" : it[1]), x, rowY + 56);
+  });
+  return rowY + 92;
+}
+function cardDivider(ctx, y, W) {
+  ctx.strokeStyle = CARD_COL.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(CARD_PAD, y); ctx.lineTo(W - CARD_PAD, y); ctx.stroke();
+}
+// Checklist progress from what the trader ALREADY recorded, against the trade's own
+// framework-version config. Returns null for legacy trades (no version config).
+function cardChecklistProgress(t, kind) {
+  const cfg = configForTrade(t);
+  if (!cfg || !t.framework) return null;
+  const parent = kind === "bias"
+    ? findBiasModelInConfig(cfg, t.framework.biasModelId)
+    : findTriggerSessionInConfig(cfg, t.framework.triggerSessionId);
+  if (!parent) return null;
+  const req = requiredChecklist(parent);
+  if (!req.length) return null;
+  const checks = (kind === "bias" ? t.framework.confirmationChecks : t.framework.triggerChecks) || {};
+  const done = req.filter(c => checks[c.id] === true).length;
+  return { done: done, total: req.length, confirmed: done === req.length };
+}
+
+// Draws the chart screenshot the trader picked/pasted (kept in memory only, never saved).
+// Scales to fit the card width (max height capped) and keeps the whole image visible.
+function cardChart(ctx, img, y, W) {
+  const P = CARD_PAD, maxW = W - P * 2, maxH = 640;
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  if (!iw || !ih) return y;
+  const sc = Math.min(maxW / iw, maxH / ih);
+  const dw = iw * sc, dh = ih * sc, x = P + (maxW - dw) / 2;
+  ctx.save(); cardRoundRect(ctx, x, y, dw, dh, 14); ctx.clip();
+  ctx.drawImage(img, x, y, dw, dh);
+  ctx.restore();
+  cardRoundRect(ctx, x, y, dw, dh, 14);
+  ctx.strokeStyle = CARD_COL.line; ctx.lineWidth = 1.5; ctx.stroke();
+  return y + dh + 26;
+}
+
+// Draws the whole card. Returns the final height. Called twice: once to measure, once for real.
+function drawTradeCard(ctx, t, o, H) {
+  const W = CARD_W, P = CARD_PAD, C = CARD_COL;
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const rt = tradeResultType(t);
+  const resLabel = rt === "win" ? "WIN" : rt === "loss" ? "LOSS" : rt === "breakeven" ? "BREAKEVEN" : "PENDING";
+  const resCol = rt === "win" ? C.green : rt === "loss" ? C.red : C.dim;
+  let y = P;
+
+  // Header: instrument + R
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.font = cf(84, 800); ctx.fillStyle = C.text;
+  ctx.fillText(t.instrument || "—", P, y + 72);
+  ctx.textAlign = "right"; ctx.font = cf(70, 700, true); ctx.fillStyle = resCol;
+  ctx.fillText(rt === "pending" ? "—" : fmtR(t.management.finalR), W - P, y + 72);
+  ctx.textAlign = "left";
+
+  // Row 2: direction, session/date, result label
+  const y2 = y + 104;
+  const isShort = t.direction === "Short";
+  const dw = cardPill(ctx, P, y2, (t.direction || "—").toUpperCase(), {
+    bg: isShort ? "rgba(255,107,107,0.16)" : "rgba(51,214,160,0.16)", fg: isShort ? C.red : C.green, font: cf(22, 700)
+  });
+  ctx.font = cf(26, 400); ctx.fillStyle = C.dim; ctx.textBaseline = "middle";
+  ctx.fillText([t.session, t.date, t.time].filter(Boolean).join(" · "), P + dw + 20, y2 + 21);
+  ctx.textBaseline = "alphabetic";
+  ctx.font = cf(22, 700);
+  const rw = ctx.measureText(resLabel).width + 32;
+  cardPill(ctx, W - P - rw, y2, resLabel, { fg: resCol, font: cf(22, 700) });
+  y = y2 + 40 + 30;
+  cardDivider(ctx, y, W); y += 22;
+  if (o.chartImg) y = cardChart(ctx, o.chartImg, y, W);
+
+  // Prices
+  y = cardStats(ctx, [
+    ["Entry", t.execution.entry], ["Stop Loss", t.execution.stopLoss],
+    ["Target", t.execution.target], ["Exit", t.management.exitPrice]
+  ], y, W);
+  const pnlCol = Number(t.management.finalPnL) > 0 ? C.green : (Number(t.management.finalPnL) < 0 ? C.red : C.text);
+  const second = [
+    ["Exit Type", t.management.exitType, 26],
+    ["Planned R:R", t.execution.plannedRR ? t.execution.plannedRR + " : 1" : "", 26],
+    ["MFE / MAE (R)", (t.management.mfe || "—") + " / " + (t.management.mae || "—"), 26]
+  ];
+  if (o.showMoney) {
+    second.push(["Risk", t.execution.risk !== "" && t.execution.risk !== null ? fmtCurrency(Number(t.execution.risk)) : "", 26]);
+    second.push(["P&L", t.management.finalPnL !== "" && t.management.finalPnL !== null ? fmtCurrency(Number(t.management.finalPnL)) : "", 26, pnlCol]);
+  } else {
+    second.push(["Contracts", t.execution.contracts, 26]);
+  }
+  y = cardStats(ctx, second, y, W);
+  cardDivider(ctx, y - 14, W); y += 8;
+
+  // Context
+  cardLabel(ctx, "Context", P, y + 18);
+  ctx.font = cf(28, 500); ctx.fillStyle = C.text;
+  const ctxText = [tradeBiasLabel(t), t.marketContext.marketCondition].filter(Boolean).join(" · ") || "—";
+  ctx.fillText(ctxText, P + 150, y + 22);
+  y += 58;
+
+  // Framework
+  cardLabel(ctx, "Framework", P, y + 18);
+  ctx.font = cf(20, 700);
+  const vText = tradeVersionLabel(t);
+  const vw = ctx.measureText(vText).width + 28;
+  cardPill(ctx, P + 150, y - 2, vText, { h: 32, fg: C.green, bg: "rgba(51,214,160,0.14)", font: cf(20, 700), padX: 14 });
+  y += 40;
+  const fwChips = [];
+  const biasL = tradeBiasLabel(t), trigL = tradeTriggerLabel(t);
+  if (biasL) fwChips.push({ text: "Bias: " + biasL, border: C.accent, fg: C.accent });
+  if (trigL) fwChips.push({ text: "Trigger: " + trigL, border: C.accent, fg: C.accent });
+  if (fwChips.length) y = cardChips(ctx, fwChips, P, y, W - P, { bg: "rgba(127,163,255,0.08)" });
+  else { ctx.font = cf(22, 400); ctx.fillStyle = C.faint; ctx.fillText("Not recorded", P, y + 26); y += 40; }
+  const prog = [["Bias", cardChecklistProgress(t, "bias")], ["Trigger", cardChecklistProgress(t, "trigger")]].filter(p => p[1]);
+  prog.forEach(p => {
+    y += 30;
+    ctx.font = cf(21, 400); ctx.textAlign = "left";
+    ctx.fillStyle = p[1].confirmed ? C.green : C.amber;
+    ctx.fillText((p[1].confirmed ? "✓ " : "○ ") + p[0] + " checklist " + (p[1].confirmed ? "complete" : "incomplete") + " (" + p[1].done + "/" + p[1].total + " required)", P, y);
+  });
+  y += 38;
+
+  // C2 Intraday
+  cardLabel(ctx, "C2 Intraday", P, y + 18);
+  y += 34;
+  const c2 = t.c2Intraday || { whichPOI: [], whichTF: "", scenario: "" };
+  const c2Chips = [];
+  (c2.whichPOI || []).forEach(id => c2Chips.push({ text: poiLabel(t, id), border: C.amber, fg: C.amber, bg: "rgba(232,169,77,0.08)" }));
+  if (c2.whichTF) c2Chips.push({ text: "TF " + tfLabel(t, c2.whichTF), border: C.line, fg: C.text });
+  if (c2.scenario) c2Chips.push({ text: scenarioLabel(t, c2.scenario), border: C.line, fg: C.text });
+  if (c2Chips.length) y = cardChips(ctx, c2Chips, P, y, W - P, {});
+  else { ctx.font = cf(22, 400); ctx.fillStyle = C.faint; ctx.fillText("Not recorded", P, y + 26); y += 40; }
+  y += 30;
+  cardDivider(ctx, y - 12, W);
+
+  // Execution (stars derived from the trader's own 0-100 score)
+  cardLabel(ctx, "Execution", P, y + 22);
+  const score = Number(t.executionReview.totalScore) || 0;
+  const stars = Math.max(0, Math.min(5, Math.round(score / 20)));
+  ctx.font = cf(40, 400);
+  const sw = ctx.measureText("★".repeat(stars)).width;
+  const allStarsW = ctx.measureText("★★★★★").width;
+  ctx.fillStyle = C.amber; ctx.fillText("★".repeat(stars), P + 150, y + 30);
+  ctx.fillStyle = C.faint; ctx.fillText("★".repeat(5 - stars), P + 150 + sw, y + 30);
+  ctx.font = cf(24, 500, true); ctx.fillStyle = C.dim;
+  ctx.fillText(score + " / 100", P + 150 + allStarsW + 24, y + 28);
+  y += 56;
+  const rv = [];
+  if (t.classification && t.classification.label && t.classification.label !== "PENDING") {
+    const good = t.classification.goodWin || t.classification.goodLoss;
+    rv.push({ text: t.classification.label, fg: good ? C.green : C.amber, bg: good ? "rgba(51,214,160,0.14)" : "rgba(232,169,77,0.14)" });
+  }
+  if (t.review.validSetup !== null && t.review.validSetup !== undefined) rv.push({ text: "Valid setup: " + (t.review.validSetup ? "YES" : "NO") });
+  if (t.review.followedPlan !== null && t.review.followedPlan !== undefined) rv.push({ text: "Followed plan: " + (t.review.followedPlan ? "YES" : "NO") });
+  if (t.executionReview.ruleBreak === "YES") rv.push({ text: "Rule break", fg: C.red, bg: "rgba(255,107,107,0.14)" });
+  if (t.entryExecutionStyle) rv.push({ text: t.entryExecutionStyle + " entry" });
+  if (rv.length) y = cardChips(ctx, rv, P, y, W - P, {});
+  y += 26;
+
+  // Notes
+  if (o.showNotes) {
+    const blocks = [["Notes", t.notes], ["Lesson", t.review.lesson], ["Next time", t.review.nextTime]].filter(b => b[1] && String(b[1]).trim());
+    if (blocks.length) { cardDivider(ctx, y - 8, W); y += 14; }
+    blocks.forEach(b => { y = cardTextBlock(ctx, b[0], b[1], y, W, 7); y += 10; });
+  }
+
+  // Footer
+  cardDivider(ctx, y, W); y += 34;
+  ctx.font = cf(17, 600, true); ctx.fillStyle = C.faint; ctx.textAlign = "left";
+  ctx.fillText("EDGE RESEARCH", P, y);
+  ctx.textAlign = "right";
+  const foot = (o.showAccount ? resolveAccountName(t.accountId) + " · " : "") + "Generated " + todayISO();
+  ctx.fillText(foot, W - P, y);
+  ctx.textAlign = "left";
+  return y + P;
+}
+
+function buildTradeCardCanvas(t, opts) {
+  const o = Object.assign({ showMoney: false, showAccount: false, showNotes: true }, opts || {});
+  // Pass 1: measure height on a scratch canvas. Pass 2: draw at final size.
+  const probe = document.createElement("canvas");
+  probe.width = CARD_W; probe.height = 10;
+  const H = Math.ceil(drawTradeCard(probe.getContext("2d"), t, o, 2000));
+  const c = document.createElement("canvas");
+  c.width = CARD_W * CARD_SCALE; c.height = H * CARD_SCALE;
+  const ctx = c.getContext("2d");
+  ctx.scale(CARD_SCALE, CARD_SCALE);
+  drawTradeCard(ctx, t, o, H);
+  return c;
+}
+
+let cardOpts = { showMoney: false, showAccount: false, showNotes: true };
+const cardImages = new Map(); // tradeId -> Image (session memory only; never written to DB/export)
+function openTradeCard(tradeId) {
+  const t = getTradeById(tradeId);
+  if (!t) return;
+  const root = document.getElementById("modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="cardBackdrop">
+      <div class="modal" style="max-width:860px;">
+        <div class="modal-head"><h2>Summary Card</h2><button class="close-x" id="cardClose">&times;</button></div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:6px;">
+          <div class="check-row" style="border:none;padding:4px 0;"><input type="checkbox" id="cardOptNotes" ${cardOpts.showNotes ? "checked" : ""}><label for="cardOptNotes">Notes &amp; lesson</label></div>
+          <div class="check-row" style="border:none;padding:4px 0;"><input type="checkbox" id="cardOptMoney" ${cardOpts.showMoney ? "checked" : ""}><label for="cardOptMoney">Show $ risk &amp; P&amp;L</label></div>
+          <div class="check-row" style="border:none;padding:4px 0;"><input type="checkbox" id="cardOptAcc" ${cardOpts.showAccount ? "checked" : ""}><label for="cardOptAcc">Show account name</label></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;">
+          <label class="btn sm" for="cardImgFile" style="cursor:pointer;">Add chart image</label>
+          <input type="file" id="cardImgFile" accept="image/*" style="display:none;">
+          <button class="btn sm" id="cardImgRemove" ${cardImages.has(t.tradeId) ? "" : "disabled"}>Remove image</button>
+          <span class="hint" style="font-size:11px;color:var(--text-faint);">or paste a screenshot (Ctrl/⌘+V) · used for this card only, not saved</span>
+        </div>
+        <div id="cardPreview"></div>
+        <div style="display:flex;gap:8px;justify-content:space-between;margin-top:14px;flex-wrap:wrap;">
+          <button class="btn" id="cardBack">Back</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn" id="cardCopy">Copy image</button>
+            <button class="btn primary" id="cardSave">Save as PNG</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  let current = null;
+  const render = () => {
+    try {
+      current = buildTradeCardCanvas(t, Object.assign({}, cardOpts, { chartImg: cardImages.get(t.tradeId) || null }));
+      current.style.width = "100%"; current.style.height = "auto"; current.style.borderRadius = "8px";
+      const p = document.getElementById("cardPreview");
+      p.innerHTML = ""; p.appendChild(current);
+    } catch (err) { toast("Could not render card: " + err.message); }
+  };
+  render();
+  const bindOpt = (id, key) => { document.getElementById(id).onchange = e => { cardOpts[key] = e.target.checked; render(); }; };
+  bindOpt("cardOptNotes", "showNotes"); bindOpt("cardOptMoney", "showMoney"); bindOpt("cardOptAcc", "showAccount");
+  const loadChart = (file) => {
+    const im = new Image();
+    im.onload = () => { cardImages.set(t.tradeId, im); document.getElementById("cardImgRemove").disabled = false; render(); };
+    im.onerror = () => toast("Could not read that image.");
+    im.src = URL.createObjectURL(file);
+  };
+  const onPaste = (e) => {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const it of items) {
+      if (it.type && it.type.indexOf("image") === 0) {
+        const f = it.getAsFile();
+        if (f) { loadChart(f); e.preventDefault(); }
+        break;
+      }
+    }
+  };
+  document.addEventListener("paste", onPaste);
+  const cleanup = () => document.removeEventListener("paste", onPaste);
+  const close = () => { cleanup(); root.innerHTML = ""; };
+  document.getElementById("cardImgFile").onchange = (e) => { const f = e.target.files && e.target.files[0]; if (f) loadChart(f); };
+  document.getElementById("cardImgRemove").onclick = () => { cardImages.delete(t.tradeId); document.getElementById("cardImgRemove").disabled = true; render(); };
+  document.getElementById("cardClose").onclick = close;
+  document.getElementById("cardBackdrop").onclick = e => { if (e.target.id === "cardBackdrop") close(); };
+  document.getElementById("cardBack").onclick = () => { cleanup(); openTradeDetail(t.tradeId); };
+  document.getElementById("cardSave").onclick = () => {
+    if (!current) return;
+    current.toBlob(blob => {
+      if (!blob) { toast("Could not create image."); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = ("edge-" + (t.instrument || "trade") + "-" + t.date + "-" + t.tradeId.slice(0, 6) + ".png").replace(/[^\w.\-]+/g, "_");
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast("Card saved as PNG.");
+    }, "image/png");
+  };
+  document.getElementById("cardCopy").onclick = () => {
+    if (!current) return;
+    current.toBlob(async blob => {
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        toast("Image copied.");
+      } catch (err) { toast("Copy not supported here — use Save as PNG."); }
+    }, "image/png");
+  };
+}
+
 /* ---------------------------------------------------------------------
    15. DEMO DATA (uses the new id-based framework fields)
    --------------------------------------------------------------------- */
