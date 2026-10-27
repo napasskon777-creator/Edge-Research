@@ -1552,7 +1552,7 @@ function renderC2IntradayStep(body, t) {
 
     <div class="divider"></div>
     <div class="field">
-      <label>Which TF [C2 of C4] <span class="hint">single-select</span></label>
+      <label>Which TF [C2] <span class="hint">single-select</span></label>
       <select id="c2_tf">
         <option value="">—</option>
         ${tfs.map(o => `<option value="${esc(o.id)}" ${t.c2Intraday.whichTF===o.id?'selected':''}>${esc(o.label)}</option>`).join("")}
@@ -1995,7 +1995,7 @@ function openTradeDetail(tradeId) {
         <div class="divider"></div>
         <div><b>C2 Intraday (research)</b>
           <div class="kv"><span class="k">Which POI</span><span class="v">${poiText}</span></div>
-          <div class="kv"><span class="k">Which TF [C2 of C4]</span><span class="v">${tfText}</span></div>
+          <div class="kv"><span class="k">Which TF [C2]</span><span class="v">${tfText}</span></div>
           <div class="kv"><span class="k">Intraday Scenario</span><span class="v">${scnText}</span></div>
         </div>
         <div class="divider"></div>
