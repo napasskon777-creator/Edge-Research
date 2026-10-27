@@ -1584,7 +1584,7 @@ function renderC2IntradayStep(body, t) {
 function renderTriggerStep(body, t) {
   const sessions = activeTriggerSessions();
   body.innerHTML = `
-    <div class="section-title" style="margin-top:0;">Trigger — C2 [H/L of the day] <span class="hint">select the Session being traded, then complete its checklist</span></div>
+    <div class="section-title" style="margin-top:0;">C3 Entry Zone <span class="hint">select the Session being traded, then complete its checklist</span></div>
     <div class="field">
       <div class="chip-group" id="triggerChips">
         ${sessions.map(s => `<div class="chip ${t.framework.triggerSessionId===s.id?'selected':''}" data-id="${esc(s.id)}">${esc(s.name)}</div>`).join("")}
