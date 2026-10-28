@@ -870,6 +870,354 @@ async function archiveAccount(id, archived) {
   acc.archived = archived;
   return saveAccount(acc);
 }
+/* ---------------------------------------------------------------------
+   14a. ACCOUNT DELETE — SAFER VERSION
+   --------------------------------------------------------------------- */
+
+async function deleteAccountSafely(id, targetId, opts = {}) {
+  const acc = getAccountById(id);
+  if (!acc) throw new Error("Account not found.");
+
+  const owned = TRADES.filter(t => t.accountId === id);
+  const deleteTrades = opts.deleteTrades === true;
+
+  // Never delete the last account while it still owns trades.
+  if (owned.length > 0 && ACCOUNTS.length <= 1) {
+    throw new Error(
+      "Cannot delete the last account while it has trades. Create another account first."
+    );
+  }
+
+  let moved = 0;
+  let deleted = 0;
+
+  if (owned.length > 0 && deleteTrades) {
+    // Permanently delete trades only after explicit confirmation.
+    for (const t of owned) {
+      await idbDelete("trades", t.tradeId);
+      TRADES = TRADES.filter(x => x.tradeId !== t.tradeId);
+
+      if (typeof cardImages !== "undefined" && cardImages) {
+        cardImages.delete(t.tradeId);
+      }
+      deleted++;
+    }
+  } else if (owned.length > 0) {
+    // Validate destination before changing any trade.
+    if (
+      !targetId ||
+      targetId === id ||
+      !getAccountById(targetId)
+    ) {
+      throw new Error("Choose a valid destination account.");
+    }
+
+    // Keep original account IDs so successful changes can be rolled back.
+    const changed = [];
+
+    try {
+      for (const t of owned) {
+        const originalAccountId = t.accountId;
+        t.accountId = targetId;
+
+        try {
+          await idbPut("trades", t);
+          changed.push({ trade: t, originalAccountId });
+          moved++;
+        } catch (err) {
+          t.accountId = originalAccountId;
+          throw err;
+        }
+      }
+    } catch (err) {
+      // Best-effort rollback if moving any trade fails.
+      let rollbackFailures = 0;
+
+      for (const item of changed.reverse()) {
+        item.trade.accountId = item.originalAccountId;
+
+        try {
+          await idbPut("trades", item.trade);
+          moved--;
+        } catch (rollbackErr) {
+          // Keep memory consistent with the last known database value.
+          item.trade.accountId = targetId;
+          rollbackFailures++;
+        }
+      }
+
+      if (rollbackFailures > 0) {
+        throw new Error(
+          "Moving trades failed and " + rollbackFailures +
+          " trade(s) could not be rolled back. The original account was kept. " +
+          "Please refresh and verify both accounts before trying again."
+        );
+      }
+
+      throw new Error(
+        "Moving trades failed. Changes were rolled back and the original account was kept."
+      );
+    }
+  }
+
+  // Delete the account only after trade handling has completed.
+  await idbDelete("accounts", id);
+  ACCOUNTS = ACCOUNTS.filter(a => a.id !== id);
+
+  // Clear references to the deleted account.
+  if (dashboardAccountId === id) dashboardAccountId = "";
+  if (analyticsAccountId === id) analyticsAccountId = "";
+  if (reviewAccountId === id) reviewAccountId = "";
+
+  if (journalFilters && journalFilters.account === id) {
+    journalFilters.account = "";
+  }
+
+  if (SETTINGS && SETTINGS.lastAccountId === id) {
+    SETTINGS.lastAccountId = null;
+    await idbPut("kv", SETTINGS);
+  }
+
+  if (wizardTrade && wizardTrade.accountId === id) {
+    if (deleteTrades && wizardEditingId) {
+      wizardTrade = null;
+      wizardEditingId = null;
+      wizardStep = 0;
+    } else {
+      wizardTrade.accountId = targetId || getPreferredAccountId() || "";
+    }
+  }
+
+  return { moved, deleted };
+}
+
+
+function openDeleteAccountDialog(id) {
+  const acc = getAccountById(id);
+  if (!acc) return;
+
+  const owned = TRADES.filter(t => t.accountId === id);
+  const n = owned.length;
+  const isLastAccount = ACCOUNTS.length <= 1;
+  const others = ACCOUNTS
+    .filter(a => a.id !== id)
+    .sort((a, b) => (a.archived ? 1 : 0) - (b.archived ? 1 : 0));
+
+  const canMove = others.length > 0;
+  const expected = (acc.name || "").trim() || "DELETE";
+  const root = document.getElementById("modal-root");
+
+  if (!root) {
+    toast("Cannot open Delete dialog.");
+    return;
+  }
+
+  // Last account with trades must not be deleted.
+  if (n > 0 && isLastAccount) {
+    root.innerHTML = `
+      <div class="modal-backdrop" id="delAccBackdrop">
+        <div class="modal" style="max-width:560px;">
+          <div class="modal-head">
+            <h2>Cannot Delete Account</h2>
+            <button class="close-x" id="delAccClose">&times;</button>
+          </div>
+          <p><b>${esc(acc.name)}</b> contains <b>${n}</b> trade(s).</p>
+          <p class="hint">
+            This is your last account. Create another account first,
+            then move these trades to it before deleting this account.
+          </p>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+            <button class="btn" id="delAccCancel">Close</button>
+          </div>
+        </div>
+      </div>`;
+
+    const closeLast = () => { root.innerHTML = ""; };
+    document.getElementById("delAccClose").onclick = closeLast;
+    document.getElementById("delAccCancel").onclick = closeLast;
+    document.getElementById("delAccBackdrop").onclick = e => {
+      if (e.target.id === "delAccBackdrop") closeLast();
+    };
+    return;
+  }
+
+  let inner;
+
+  if (n === 0) {
+    inner =
+      `<p>Delete account <b>${esc(acc.name)}</b>?</p>
+       <p class="hint">This account has no trades. You will confirm once.</p>` +
+      (isLastAccount
+        ? `<p class="hint">This is your last account. The app will create a default "My Account" when it next initializes.</p>`
+        : "");
+  } else {
+    inner = `
+      <p>
+        <b>${esc(acc.name)}</b> contains <b>${n}</b> trade(s).
+        Choose what should happen to them.
+      </p>
+
+      <div class="check-row">
+        <input type="radio" name="delAccMode"
+               id="delAccModeMove" value="move" checked>
+        <div style="flex:1;">
+          <label for="delAccModeMove">
+            <b>1. Move trades to another account, then delete</b>
+            <span class="pill ver">Safer option</span>
+          </label>
+          <div style="margin-top:8px;">
+            <select id="delAccTarget">
+              ${others.map(a =>
+                `<option value="${esc(a.id)}">${esc(a.name)}${a.archived ? " (archived)" : ""}</option>`
+              ).join("")}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="check-row">
+        <input type="radio" name="delAccMode"
+               id="delAccModeDelete" value="delete">
+        <div style="flex:1;">
+          <label for="delAccModeDelete">
+            <b style="color:var(--red);">
+              2. Delete this account and all ${n} trade(s) permanently
+            </b>
+          </label>
+          <p class="hint">
+            Warning: this permanently deletes the trades and cannot be undone.
+            Export a backup before proceeding.
+          </p>
+          <div id="delAccTypeBox" style="display:none;margin-top:8px;">
+            <div class="hint">
+              Type the account name exactly:
+              <b>${esc(expected)}</b>
+            </div>
+            <input type="text" id="delAccTypeName"
+                   autocomplete="off" style="margin-top:4px;">
+            <button class="btn sm" id="delAccBackup" style="margin-top:8px;">
+              Export backup first
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="delAccBackdrop">
+      <div class="modal" style="max-width:560px;">
+        <div class="modal-head">
+          <h2>Delete Account</h2>
+          <button class="close-x" id="delAccClose">&times;</button>
+        </div>
+        ${inner}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+          <button class="btn" id="delAccCancel">Cancel</button>
+          <button class="btn danger" id="delAccConfirm">Delete account</button>
+        </div>
+      </div>
+    </div>`;
+
+  const close = () => { root.innerHTML = ""; };
+  const confirmBtn = document.getElementById("delAccConfirm");
+  const typed = document.getElementById("delAccTypeName");
+
+  const mode = () => {
+    const selected = root.querySelector('input[name="delAccMode"]:checked');
+    return selected ? selected.value : "none";
+  };
+
+  const refresh = () => {
+    if (n === 0) {
+      confirmBtn.textContent = "Delete account";
+      confirmBtn.disabled = false;
+      return;
+    }
+
+    const selectedMode = mode();
+    const typeBox = document.getElementById("delAccTypeBox");
+
+    typeBox.style.display = selectedMode === "delete" ? "block" : "none";
+
+    if (selectedMode === "delete") {
+      confirmBtn.textContent = `Delete account & ${n} trade(s) permanently`;
+      confirmBtn.disabled = !typed || typed.value.trim() !== expected;
+    } else {
+      confirmBtn.textContent = `Move ${n} trade(s) & delete account`;
+      confirmBtn.disabled = selectedMode !== "move";
+    }
+  };
+
+  if (n > 0) {
+    root.querySelectorAll('input[name="delAccMode"]').forEach(r => {
+      r.onchange = refresh;
+    });
+
+    typed.oninput = refresh;
+
+    document.getElementById("delAccBackup").onclick = () => {
+      exportAllJSON();
+    };
+  }
+
+  refresh();
+
+  document.getElementById("delAccClose").onclick = close;
+  document.getElementById("delAccCancel").onclick = close;
+
+  document.getElementById("delAccBackdrop").onclick = e => {
+    if (e.target.id === "delAccBackdrop") close();
+  };
+
+  confirmBtn.onclick = async () => {
+    confirmBtn.disabled = true;
+
+    try {
+      const selectedMode = n === 0 ? "none" : mode();
+      let result;
+
+      if (selectedMode === "delete") {
+        if (!typed || typed.value.trim() !== expected) {
+          throw new Error("The account name does not match.");
+        }
+
+        // The backup button is provided, but the user must export it
+        // before confirming permanent deletion.
+        const proceed = confirm(
+          "Permanent deletion will remove all trades in this account. " +
+          "Make sure you exported a backup. Continue?"
+        );
+        if (!proceed) {
+          refresh();
+          return;
+        }
+
+        result = await deleteAccountSafely(id, null, { deleteTrades: true });
+      } else {
+        const select = document.getElementById("delAccTarget");
+        result = await deleteAccountSafely(
+          id,
+          select ? select.value : null
+        );
+      }
+
+      close();
+
+      if (result.deleted) {
+        toast(`Account and ${result.deleted} trade(s) deleted.`);
+      } else if (result.moved) {
+        toast(`Account deleted. ${result.moved} trade(s) moved.`);
+      } else {
+        toast("Account deleted.");
+      }
+
+      router();
+    } catch (err) {
+      refresh();
+      toast("Delete failed: " + err.message);
+    }
+  };
+}
 function resolveAccountName(accountId) {
   const acc = getAccountById(accountId);
   return acc ? acc.name : "Unknown Account";
@@ -2596,11 +2944,15 @@ function renderSettingsAccounts(body) {
           <div style="display:flex;gap:6px;">
             <button class="btn sm" data-edit="${a.id}">Edit</button>
             <button class="btn sm" data-arch="${a.id}">${a.archived?'Unarchive':'Archive'}</button>
+            <button class="btn sm danger" data-delacc="${a.id}">Delete</button>
           </div>
         </div>
       </div>`;
   }).join("");
   list.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openAccountEditor(b.dataset.edit));
+  list.querySelectorAll("[data-delacc]").forEach(b => {
+  b.onclick = () => openDeleteAccountDialog(b.dataset.delacc);
+});
   list.querySelectorAll("[data-arch]").forEach(b => b.onclick = async () => {
     const acc = getAccountById(b.dataset.arch);
     await archiveAccount(acc.id, !acc.archived);
